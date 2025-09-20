@@ -1,0 +1,33 @@
+apply plugin: 'com.android.application'
+
+android {
+	useLibrary 'org.apache.http.legacy'
+	compileSdkVersion 33
+	
+	defaultConfig {
+		applicationId "com.shashwat.ytify"
+		minSdkVersion 21
+		targetSdkVersion 33
+		versionCode 1
+		versionName "3.87"
+	}
+	buildTypes {
+		release {
+			minifyEnabled false
+			proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+		}
+	}
+	
+	compileOptions {
+		sourceCompatibility JavaVersion.VERSION_11
+		targetCompatibility JavaVersion.VERSION_11
+	}
+	
+	namespace "com.shashwat.ytify"
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
+}
+

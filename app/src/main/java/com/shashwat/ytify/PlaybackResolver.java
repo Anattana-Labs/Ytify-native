@@ -240,8 +240,8 @@ public class PlaybackResolver {
         String visitorData = getVisitorData(false);
 
         YouTubeClient[] clients = new YouTubeClient[]{
-                VisionOs,
                 AndroidVr16510,
+                VisionOs,
                 AndroidVr16148,
                 AndroidVr14332,
                 AndroidVrNoAuth,
@@ -339,19 +339,25 @@ public class PlaybackResolver {
                 cleanFormat.put("clen", cleanFormat.optString("contentLength", ""));
 
                 if (isVideo) {
+                    int height = cleanFormat.optInt("height", 0);
+                    int width = cleanFormat.optInt("width", 0);
+                    int fps = cleanFormat.optInt("fps", 30);
                     String qLabel = cleanFormat.optString("qualityLabel", "");
-                    if (qLabel.isEmpty() && cleanFormat.has("height")) {
-                        qLabel = cleanFormat.optInt("height") + "p";
+                    if (qLabel.isEmpty() && height > 0) {
+                        qLabel = height + "p";
                     }
                     if (qLabel.isEmpty()) {
                         qLabel = cleanFormat.optString("quality", "360p");
                     }
-                    String baseRes = qLabel.replaceAll("(?i)[^0-9p]", "");
+                    String baseRes = height > 0 ? (height + "p") : qLabel.replaceAll("(?i)[^0-9p]", "");
                     if (baseRes.isEmpty()) baseRes = qLabel;
 
                     cleanFormat.put("resolution", baseRes);
                     cleanFormat.put("quality", baseRes);
                     cleanFormat.put("qualityLabel", qLabel);
+                    cleanFormat.put("height", height);
+                    cleanFormat.put("width", width);
+                    cleanFormat.put("fps", fps);
                 } else if (isAudio) {
                     cleanFormat.put("resolution", "");
                     cleanFormat.put("quality", cleanFormat.optString("audioQuality", "medium"));

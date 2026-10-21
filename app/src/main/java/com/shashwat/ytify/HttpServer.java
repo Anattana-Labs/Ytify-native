@@ -147,6 +147,8 @@ public class HttpServer extends NanoHTTPD {
             }
             if (range != null && !range.trim().isEmpty()) {
                 conn.setRequestProperty("Range", range.trim());
+            } else {
+                conn.setRequestProperty("Range", "bytes=0-");
             }
 
             conn.connect();

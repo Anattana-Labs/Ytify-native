@@ -222,6 +222,66 @@ public class MainActivity extends Activity {
       "  window.__ytify_fetch_interceptor_installed = true;\n" +
       "  var LOCAL_PORT = 9999;\n" +
       "  var LOCAL_URL = 'http://127.0.0.1:' + LOCAL_PORT;\n" +
+      "  window.__ytify_video_formats = [];\n" +
+      "  try {\n" +
+      "    var OrigURL = window.URL;\n" +
+      "    window.URL = function(url, base) {\n" +
+      "      if (typeof url === 'string' && (url === 'Resolution' || url.endsWith('/Resolution') || url.trim() === '')) {\n" +
+      "        return new OrigURL('http://127.0.0.1:' + LOCAL_PORT + '/dummy_res');\n" +
+      "      }\n" +
+      "      return base !== undefined ? new OrigURL(url, base) : new OrigURL(url);\n" +
+      "    };\n" +
+      "    window.URL.prototype = OrigURL.prototype;\n" +
+      "    window.URL.createObjectURL = OrigURL.createObjectURL;\n" +
+      "    window.URL.revokeObjectURL = OrigURL.revokeObjectURL;\n" +
+      "  } catch(e) {}\n" +
+      "  try {\n" +
+      "    var origSetAttribute = Element.prototype.setAttribute;\n" +
+      "    Element.prototype.setAttribute = function(name, val) {\n" +
+      "      if (this instanceof HTMLVideoElement && typeof name === 'string' && name.toLowerCase() === 'crossorigin') {\n" +
+      "        return;\n" +
+      "      }\n" +
+      "      return origSetAttribute.apply(this, arguments);\n" +
+      "    };\n" +
+      "    var origCrossDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'crossOrigin');\n" +
+      "    if (origCrossDesc && origCrossDesc.set) {\n" +
+      "      Object.defineProperty(HTMLMediaElement.prototype, 'crossOrigin', {\n" +
+      "        get: function() { return null; },\n" +
+      "        set: function() {},\n" +
+      "        configurable: true\n" +
+      "      });\n" +
+      "    }\n" +
+      "  } catch(e) {}\n" +
+      "  function pickBestVideoUrl() {\n" +
+      "    var sel = document.querySelector('.watcher select');\n" +
+      "    if (sel && sel.options && sel.options.length > 1) {\n" +
+      "      if (sel.selectedIndex > 0 && sel.options[sel.selectedIndex].value && sel.options[sel.selectedIndex].value.startsWith('http')) {\n" +
+      "        return sel.options[sel.selectedIndex].value;\n" +
+      "      }\n" +
+      "      for (var i = 1; i < sel.options.length; i++) {\n" +
+      "        var opt = sel.options[i];\n" +
+      "        if (opt.value && opt.value.startsWith('http')) {\n" +
+      "          sel.selectedIndex = i;\n" +
+      "          return opt.value;\n" +
+      "        }\n" +
+      "      }\n" +
+      "    }\n" +
+      "    if (window.__ytify_video_formats && window.__ytify_video_formats.length > 0) {\n" +
+      "      var fmts = window.__ytify_video_formats;\n" +
+      "      var pref = ['720p', '480p', '360p', '1080p', '240p', '144p'];\n" +
+      "      for (var p = 0; p < pref.length; p++) {\n" +
+      "        for (var j = 0; j < fmts.length; j++) {\n" +
+      "          if (fmts[j].resolution === pref[p] && fmts[j].url) {\n" +
+      "            return fmts[j].url;\n" +
+      "          }\n" +
+      "        }\n" +
+      "      }\n" +
+      "      for (var k = 0; k < fmts.length; k++) {\n" +
+      "        if (fmts[k].url) return fmts[k].url;\n" +
+      "      }\n" +
+      "    }\n" +
+      "    return null;\n" +
+      "  }\n" +
       "  var origFetch = window.fetch;\n" +
       "  window.fetch = async function(resource, init) {\n" +
       "    try {\n" +
@@ -248,6 +308,14 @@ public class MainActivity extends Activity {
       "            if (typeof Android !== 'undefined' && Android.onLocalServerUsed) {\n" +
       "              Android.onLocalServerUsed();\n" +
       "            }\n" +
+      "            localRes.clone().json().then(function(data) {\n" +
+      "              if (data && data.adaptiveFormats) {\n" +
+      "                window.__ytify_video_formats = data.adaptiveFormats.filter(function(f) {\n" +
+      "                  return f && f.type && f.type.startsWith('video');\n" +
+      "                });\n" +
+      "                console.log('[YtifyNative] Cached video formats:', window.__ytify_video_formats.length);\n" +
+      "              }\n" +
+      "            }).catch(function() {});\n" +
       "            return localRes;\n" +
       "          }\n" +
       "          console.warn('[YtifyNative] Localhost:9999 returned status ' + (localRes ? localRes.status : 'null') + ', falling back to remote...');\n" +
@@ -265,16 +333,24 @@ public class MainActivity extends Activity {
       "    if (origVideoSrcDesc && origVideoSrcDesc.set) {\n" +
       "      var origSetSrc = origVideoSrcDesc.set;\n" +
       "      origVideoSrcDesc.set = function(val) {\n" +
-      "        if (this instanceof HTMLVideoElement && typeof val === 'string' && (val.endsWith('/Resolution') || val === 'Resolution')) {\n" +
-      "          var sel = document.querySelector('.watcher select');\n" +
-      "          if (sel && sel.options) {\n" +
-      "            for (var i = 0; i < sel.options.length; i++) {\n" +
-      "              var optVal = sel.options[i].value;\n" +
-      "              if (optVal && optVal.startsWith('http')) {\n" +
-      "                val = optVal;\n" +
-      "                sel.selectedIndex = i;\n" +
-      "                break;\n" +
-      "              }\n" +
+      "        if (this instanceof HTMLVideoElement) {\n" +
+      "          this.removeAttribute('crossorigin');\n" +
+      "          if (typeof val === 'string' && (val === 'Resolution' || val.endsWith('/Resolution') || val.includes('dummy_res') || !val.startsWith('http'))) {\n" +
+      "            var best = pickBestVideoUrl();\n" +
+      "            if (best) {\n" +
+      "              val = best;\n" +
+      "            } else {\n" +
+      "              var self = this;\n" +
+      "              setTimeout(function() {\n" +
+      "                var b = pickBestVideoUrl();\n" +
+      "                if (b && (!self.src || self.src.includes('dummy_res') || self.src.endsWith('/Resolution'))) {\n" +
+      "                  self.removeAttribute('crossorigin');\n" +
+      "                  origSetSrc.call(self, b);\n" +
+      "                  if (window.__currentAudio) self.currentTime = window.__currentAudio.currentTime || 0;\n" +
+      "                  self.play().catch(function() {});\n" +
+      "                }\n" +
+      "              }, 120);\n" +
+      "              return;\n" +
       "            }\n" +
       "          }\n" +
       "        }\n" +
@@ -283,7 +359,53 @@ public class MainActivity extends Activity {
       "      Object.defineProperty(HTMLMediaElement.prototype, 'src', origVideoSrcDesc);\n" +
       "    }\n" +
       "  } catch (e) {}\n" +
-      "  console.log('[YtifyNative] Stream interceptor installed: primary=localhost:9999');\n" +
+      "  document.addEventListener('change', function(e) {\n" +
+      "    if (e.target && e.target.matches('.watcher select')) {\n" +
+      "      var v = document.querySelector('.watcher video, video');\n" +
+      "      if (v && e.target.value && e.target.value.startsWith('http')) {\n" +
+      "        v.removeAttribute('crossorigin');\n" +
+      "        v.src = e.target.value;\n" +
+      "        if (window.__currentAudio) {\n" +
+      "          v.currentTime = window.__currentAudio.currentTime || 0;\n" +
+      "        }\n" +
+      "        v.play().catch(function() {});\n" +
+      "      }\n" +
+      "    }\n" +
+      "  }, true);\n" +
+      "  document.addEventListener('error', function(e) {\n" +
+      "    if (e.target && e.target instanceof HTMLVideoElement) {\n" +
+      "      var v = e.target;\n" +
+      "      var cur = v.currentSrc || v.src || '';\n" +
+      "      if (cur.startsWith('http') && !cur.includes(':9999/proxy') && !cur.includes('dummy_res')) {\n" +
+      "        var proxied = LOCAL_URL + '/proxy?url=' + encodeURIComponent(cur);\n" +
+      "        console.log('[YtifyNative] Direct video stream failed, falling back to local proxy:', proxied.substring(0, 80));\n" +
+      "        v.removeAttribute('crossorigin');\n" +
+      "        v.src = proxied;\n" +
+      "        if (window.__currentAudio) {\n" +
+      "          v.currentTime = window.__currentAudio.currentTime || 0;\n" +
+      "        }\n" +
+      "        v.play().catch(function() {});\n" +
+      "      }\n" +
+      "    }\n" +
+      "  }, true);\n" +
+      "  var observer = new MutationObserver(function() {\n" +
+      "    var v = document.querySelector('.watcher video, video');\n" +
+      "    if (v) {\n" +
+      "      v.removeAttribute('crossorigin');\n" +
+      "      var cur = v.getAttribute('src') || '';\n" +
+      "      if (!cur || cur.includes('dummy_res') || cur.endsWith('/Resolution')) {\n" +
+      "        var best = pickBestVideoUrl();\n" +
+      "        if (best) {\n" +
+      "          v.removeAttribute('crossorigin');\n" +
+      "          v.src = best;\n" +
+      "          if (window.__currentAudio) v.currentTime = window.__currentAudio.currentTime || 0;\n" +
+      "          v.play().catch(function() {});\n" +
+      "        }\n" +
+      "      }\n" +
+      "    }\n" +
+      "  });\n" +
+      "  observer.observe(document.documentElement, { childList: true, subtree: true });\n" +
+      "  console.log('[YtifyNative] Stream core & video patch installed: primary=localhost:9999');\n" +
       "})();\n";
 
   private static final String JS_MEDIA_SCRIPT =

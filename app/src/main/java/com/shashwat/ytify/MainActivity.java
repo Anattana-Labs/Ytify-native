@@ -109,12 +109,12 @@ public class MainActivity extends Activity {
     Intent intent = getIntent();
     String action = intent.getAction();
     Uri data = intent.getData();
-    String url = "https://ytify-native.netlify.app/";
+    String url = "https://ytify.pp.ua/";
     if (Intent.ACTION_VIEW.equals(action) && data != null) {
       url = data.toString();
     } else if (Intent.ACTION_SEND.equals(action)) {
       String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
-      if (sharedText != null && (sharedText.contains("ytify-native.netlify.app") || sharedText.contains("youtu.be"))) {
+      if (sharedText != null && (sharedText.contains("ytify.pp.ua") || sharedText.contains("ytify-native.netlify.app") || sharedText.contains("youtu.be"))) {
         url = sharedText;
       }
     }
@@ -178,7 +178,7 @@ web.loadUrl("javascript:(function () { var script = document.createElement('scri
           //dL=false;                
         }
 
-        if (!url.contains("ytify-native.netlify.app/s") && !url.contains("ytify-native.netlify.app/s") && isPlaying) {
+        if (!url.contains("ytify.pp.ua/s") && !url.contains("ytify-native.netlify.app/s") && isPlaying) {
           isPlaying = false;
           stopService(new Intent(getApplicationContext(), ForegroundService.class));
         }
@@ -195,7 +195,7 @@ web.loadUrl("javascript:(function () { var script = document.createElement('scri
     super.onRequestPermissionsResult(requestCode, permissions, grantResults);
     if (requestCode == 101) {
       if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-        web.loadUrl("https://ytify-native.netlify.app");
+        web.loadUrl("https://ytify.pp.ua");
       } else {
         Toast.makeText(getApplicationContext(), getString(R.string.grant_mic), Toast.LENGTH_SHORT).show();
       }
@@ -296,7 +296,7 @@ web.loadUrl("javascript:(function () { var script = document.createElement('scri
 
     @Override
     public void onPermissionRequest(final PermissionRequest request) {
-      if (Build.VERSION.SDK_INT > 22 && request.getOrigin().toString().contains("ytify-native.netlify.app")) {
+      if (Build.VERSION.SDK_INT > 22 && (request.getOrigin().toString().contains("ytify.pp.ua") || request.getOrigin().toString().contains("ytify-native.netlify.app"))) {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_DENIED) {
           requestPermissions(new String[] {
             Manifest.permission.RECORD_AUDIO

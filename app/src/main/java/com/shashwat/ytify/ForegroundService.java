@@ -331,7 +331,7 @@ public class ForegroundService extends Service {
                 .setMediaSession(mediaSession.getSessionToken())
                 .setShowActionsInCompactView(0, 1, 2);
 
-        builder.setSmallIcon(R.drawable.app_icon)
+        builder.setSmallIcon(R.mipmap.ic_launcher)
                 .setContentTitle(currentTitle.isEmpty() ? "Playing Audio" : currentTitle)
                 .setContentText(currentArtist)
                 .setContentIntent(openAppPendingIntent)

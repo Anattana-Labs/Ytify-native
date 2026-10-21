@@ -53,7 +53,7 @@ public class PlaybackResolver {
             this.friendlyName = friendlyName;
         }
 
-        public JSONObject context() {
+        public JSONObject context(String visitorData) {
             try {
                 JSONObject client = new JSONObject()
                         .put("clientName", clientName)
@@ -65,11 +65,62 @@ public class PlaybackResolver {
                 if (deviceMake != null) client.put("deviceMake", deviceMake);
                 if (deviceModel != null) client.put("deviceModel", deviceModel);
                 if (androidSdkVersion != null) client.put("androidSdkVersion", androidSdkVersion);
+                if (visitorData != null && !visitorData.trim().isEmpty()) {
+                    client.put("visitorData", visitorData.trim());
+                }
                 return new JSONObject().put("client", client);
             } catch (Exception e) {
                 return new JSONObject();
             }
         }
+    }
+
+    private static volatile String cachedVisitorData = null;
+
+    public static synchronized String getVisitorData(boolean forceRefresh) {
+        if (!forceRefresh && cachedVisitorData != null && !cachedVisitorData.trim().isEmpty()) {
+            return cachedVisitorData;
+        }
+        HttpURLConnection conn = null;
+        try {
+            JSONObject body = new JSONObject().put(
+                    "context", new JSONObject().put(
+                            "client", new JSONObject()
+                                    .put("clientName", "WEB")
+                                    .put("clientVersion", "2.20240901.01.00")
+                                    .put("gl", "US")
+                                    .put("hl", "en")
+                    )
+            );
+            conn = (HttpURLConnection) new URL("https://www.youtube.com/youtubei/v1/visitor_id").openConnection();
+            conn.setConnectTimeout(CONNECT_TIMEOUT);
+            conn.setReadTimeout(READ_TIMEOUT);
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            conn.setDoOutput(true);
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body.toString().getBytes(StandardCharsets.UTF_8));
+            }
+            String resStr = readResponse(conn);
+            if (resStr.startsWith("{")) {
+                JSONObject json = new JSONObject(resStr);
+                JSONObject respCtx = json.optJSONObject("responseContext");
+                if (respCtx != null) {
+                    String vd = respCtx.optString("visitorData", null);
+                    if (vd != null && !vd.trim().isEmpty()) {
+                        cachedVisitorData = vd.trim();
+                        Log.i(TAG, "Acquired YouTube visitorData: " + cachedVisitorData);
+                        return cachedVisitorData;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to fetch visitorData: " + e.getMessage());
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+        return cachedVisitorData;
     }
 
     public static final YouTubeClient VisionOs = new YouTubeClient(
@@ -128,11 +179,11 @@ public class PlaybackResolver {
         }
     }
 
-    public static JSONObject queryInnerTube(String videoId, YouTubeClient client) {
+    public static JSONObject queryInnerTube(String videoId, YouTubeClient client, String visitorData) {
         HttpURLConnection conn = null;
         try {
             JSONObject body = new JSONObject()
-                    .put("context", client.context())
+                    .put("context", client.context(visitorData))
                     .put("videoId", videoId)
                     .put("playbackContext", new JSONObject().put(
                             "contentPlaybackContext", new JSONObject().put("signatureTimestamp", 20630)
@@ -147,6 +198,9 @@ public class PlaybackResolver {
             conn.setRequestProperty("Accept", "application/json");
             conn.setRequestProperty("X-Youtube-Client-Name", client.clientId);
             conn.setRequestProperty("X-Youtube-Client-Version", client.clientVersion);
+            if (visitorData != null && !visitorData.trim().isEmpty()) {
+                conn.setRequestProperty("X-Goog-Visitor-Id", visitorData.trim());
+            }
 
             boolean isWeb = client.clientName.startsWith("WEB") || client.clientName.startsWith("TVHTML5");
             if (isWeb) {
@@ -167,6 +221,9 @@ public class PlaybackResolver {
             if (playability != null && "OK".equalsIgnoreCase(playability.optString("status"))) {
                 return json;
             }
+            String status = playability != null ? playability.optString("status") : "null";
+            String reason = playability != null ? playability.optString("reason") : "";
+            Log.d(TAG, client.friendlyName + " status: " + status + ", reason: " + reason);
         } catch (Exception e) {
             Log.d(TAG, "InnerTube error for " + client.friendlyName + ": " + e.getMessage());
         } finally {
@@ -180,6 +237,8 @@ public class PlaybackResolver {
      * No external scraping library, no external bucket/worker APIs.
      */
     public static JSONObject resolveStreams(String videoId) throws Exception {
+        String visitorData = getVisitorData(false);
+
         YouTubeClient[] clients = new YouTubeClient[]{
                 VisionOs,
                 AndroidVr16510,
@@ -193,37 +252,43 @@ public class PlaybackResolver {
         JSONObject successfulResponse = null;
         YouTubeClient successfulClient = null;
 
-        for (YouTubeClient client : clients) {
-            JSONObject resp = queryInnerTube(videoId, client);
-            if (resp != null) {
-                JSONObject streamingData = resp.optJSONObject("streamingData");
-                if (streamingData != null) {
-                    JSONArray adaptive = streamingData.optJSONArray("adaptiveFormats");
-                    JSONArray muxed = streamingData.optJSONArray("formats");
-                    boolean hasPlayableUrl = false;
-                    if (adaptive != null) {
-                        for (int i = 0; i < adaptive.length(); i++) {
-                            JSONObject f = adaptive.optJSONObject(i);
-                            if (f != null && f.has("url") && !f.optString("url").trim().isEmpty()) {
-                                hasPlayableUrl = true;
-                                break;
+        for (int attempt = 0; attempt < 2 && successfulResponse == null; attempt++) {
+            if (attempt > 0) {
+                Log.i(TAG, "Refreshing visitorData after initial stream attempt failed for: " + videoId);
+                visitorData = getVisitorData(true);
+            }
+            for (YouTubeClient client : clients) {
+                JSONObject resp = queryInnerTube(videoId, client, visitorData);
+                if (resp != null) {
+                    JSONObject streamingData = resp.optJSONObject("streamingData");
+                    if (streamingData != null) {
+                        JSONArray adaptive = streamingData.optJSONArray("adaptiveFormats");
+                        JSONArray muxed = streamingData.optJSONArray("formats");
+                        boolean hasPlayableUrl = false;
+                        if (adaptive != null) {
+                            for (int i = 0; i < adaptive.length(); i++) {
+                                JSONObject f = adaptive.optJSONObject(i);
+                                if (f != null && f.has("url") && !f.optString("url").trim().isEmpty()) {
+                                    hasPlayableUrl = true;
+                                    break;
+                                }
                             }
                         }
-                    }
-                    if (!hasPlayableUrl && muxed != null) {
-                        for (int i = 0; i < muxed.length(); i++) {
-                            JSONObject f = muxed.optJSONObject(i);
-                            if (f != null && f.has("url") && !f.optString("url").trim().isEmpty()) {
-                                hasPlayableUrl = true;
-                                break;
+                        if (!hasPlayableUrl && muxed != null) {
+                            for (int i = 0; i < muxed.length(); i++) {
+                                JSONObject f = muxed.optJSONObject(i);
+                                if (f != null && f.has("url") && !f.optString("url").trim().isEmpty()) {
+                                    hasPlayableUrl = true;
+                                    break;
+                                }
                             }
                         }
-                    }
-                    if (hasPlayableUrl) {
-                        successfulResponse = resp;
-                        successfulClient = client;
-                        Log.i(TAG, "Successfully extracted unciphered streams from InnerTube client: " + client.friendlyName);
-                        break;
+                        if (hasPlayableUrl) {
+                            successfulResponse = resp;
+                            successfulClient = client;
+                            Log.i(TAG, "Successfully extracted unciphered streams from InnerTube client: " + client.friendlyName);
+                            break;
+                        }
                     }
                 }
             }

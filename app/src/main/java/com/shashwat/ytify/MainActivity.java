@@ -39,7 +39,7 @@ public class MainActivity extends Activity {
       HttpServer server = new HttpServer();
       if (!server.isRunning()) {
         server.start();
-        Log.i("MainActivity", "HTTP Server started on port 3500");
+        Log.i("MainActivity", "HTTP Server started on port " + server.getPort());
       }
     } catch (Exception e) {
       Log.e("MainActivity", "Error starting HTTP server: " + e.getMessage(), e);

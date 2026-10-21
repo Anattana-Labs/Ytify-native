@@ -10,6 +10,7 @@ android {
 		targetSdkVersion 33
 		versionCode 1
 		versionName "3.87"
+		multiDexEnabled true
 	}
 	buildTypes {
 		release {
@@ -19,6 +20,7 @@ android {
 	}
 	
 	compileOptions {
+		coreLibraryDesugaringEnabled true
 		sourceCompatibility JavaVersion.VERSION_11
 		targetCompatibility JavaVersion.VERSION_11
 	}
@@ -26,8 +28,16 @@ android {
 	namespace "com.shashwat.ytify"
 }
 
+configurations.all {
+    resolutionStrategy {
+        force 'org.mozilla:rhino:1.7.15'
+    }
+}
+
 dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs_nio:2.0.4'
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
+    implementation 'com.github.teamnewpipe:NewPipeExtractor:v0.26.5'
 }
 

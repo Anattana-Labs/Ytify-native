@@ -1,7 +1,6 @@
 apply plugin: 'com.android.application'
 
 android {
-	useLibrary 'org.apache.http.legacy'
 	compileSdkVersion 33
 	
 	defaultConfig {
@@ -10,7 +9,6 @@ android {
 		targetSdkVersion 33
 		versionCode 1
 		versionName "3.87"
-		multiDexEnabled true
 	}
 	buildTypes {
 		release {
@@ -20,22 +18,8 @@ android {
 			signingConfig signingConfigs.debug
 		}
 	}
-
-	packagingOptions {
-		resources {
-			excludes += [
-				'google/protobuf/**',
-				'core/**',
-				'org/mozilla/javascript/resources/**',
-				'org/mozilla/javascript/tools/**',
-				'META-INF/NOTICE-tools.txt',
-				'META-INF/jsoup/LICENSE'
-			]
-		}
-	}
 	
 	compileOptions {
-		coreLibraryDesugaringEnabled true
 		sourceCompatibility JavaVersion.VERSION_11
 		targetCompatibility JavaVersion.VERSION_11
 	}
@@ -43,11 +27,8 @@ android {
 	namespace "com.shashwat.ytify"
 }
 
-
-
 dependencies {
-    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs_nio:2.0.4'
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
 }
+
 

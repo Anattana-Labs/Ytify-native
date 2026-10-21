@@ -841,7 +841,7 @@ public class MainActivity extends Activity {
       public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
         if (request != null && request.getUrl() != null) {
           String urlStr = request.getUrl().toString();
-          if (urlStr.contains(".googlevideo.com/videoplayback")) {
+          if (urlStr.contains(".googlevideo.com/videoplayback") && !urlStr.contains("127.0.0.1") && !urlStr.contains("localhost")) {
             return handleGoogleVideoIntercept(request);
           }
         }
@@ -944,8 +944,9 @@ public class MainActivity extends Activity {
           }
         }
       }
-      if (conn.getRequestProperty("Range") == null) {
-        conn.setRequestProperty("Range", "bytes=0-");
+      String reqRange = conn.getRequestProperty("Range");
+      if (reqRange == null || "bytes=0-".equals(reqRange.trim())) {
+        conn.setRequestProperty("Range", "bytes=0-262143");
       }
       conn.connect();
 
@@ -967,6 +968,7 @@ public class MainActivity extends Activity {
       resHeaders.put("Access-Control-Allow-Origin", "*");
       resHeaders.put("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
       resHeaders.put("Access-Control-Allow-Headers", "*");
+      resHeaders.put("Access-Control-Allow-Private-Network", "true");
       resHeaders.put("Accept-Ranges", "bytes");
 
       String cr = conn.getHeaderField("Content-Range");

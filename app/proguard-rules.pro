@@ -14,6 +14,9 @@
     @android.webkit.JavascriptInterface <methods>;
 }
 -keep class com.shashwat.ytify.MainActivity$WebAppInterface { *; }
+-keep class com.shashwat.ytify.VeltrixWebview { *; }
+-keep class com.shashwat.ytify.HttpServer** { *; }
+-keep class com.shashwat.ytify.PlaybackResolver** { *; }
 -keep class fi.iki.elonen.** { *; }
 -keepclassmembers class fi.iki.elonen.** { *; }
 

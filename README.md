@@ -2,18 +2,18 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Android%205.0%2B-green.svg)](https://developer.android.com)
-[![APK Size](https://img.shields.io/badge/APK%20Size-~218%20KB-brightgreen.svg)](https://github.com/Anattana-Labs/Ytify-native/releases)
+[![APK Size](https://img.shields.io/badge/APK%20Size-~131%20KB-brightgreen.svg)](https://github.com/Anattana-Labs/Ytify-native/releases)
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Anattana--Labs%2FYtify--native-181717.svg?logo=github)](https://github.com/Anattana-Labs/Ytify-native)
 
 **Ytify-native** is an ultra-lightweight, high-performance native Android application for [Ytify](https://ytify.pp.ua) with an embedded, on-device YouTube InnerTube extraction engine and low-latency chunk-streaming proxy.
 
-It achieves instant, background audio/video playback and lockscreen media session control with a minimal **~218 KB** APK footprint — containing **zero third-party scrapers, zero remote bucket/worker dependencies, and zero telemetry**.
+It achieves instant, background audio/video playback and lockscreen media session control with a minimal **~131 KB** APK footprint — containing **zero third-party scrapers, zero remote bucket/worker dependencies, and zero telemetry**.
 
 ---
 
 ## ⚡ Key Highlights
 
-- **🪶 Tiny Footprint (~218 KB APK)**: Built strictly with native Android components and an embedded micro-HTTP server. No bulky frameworks or heavy scraping libraries.
+- **🪶 Tiny Footprint (~131 KB APK)**: Built strictly with native Android components, R8 bytecode optimization, and an embedded micro-HTTP server. No bulky frameworks or heavy scraping libraries.
 - **🛡️ 100% Local InnerTube Extraction**: Extracts direct, unciphered YouTube audio (`itag 140`, `itag 251`, `itag 249`) and video streams (`itag 18`, `itag 313`, `itag 137`, etc.) directly on device via InnerTube clients (`ANDROID_VR`, `VISIONOS`, `TVHTML5`).
 - **🔄 Smart Chunk-Streaming Proxy (`MultiChunkInputStream`)**: Bridges YouTube Google Video CDN range limitations (handling 256 KB bounded chunks) seamlessly to provide continuous playback without `HTTP 403 Forbidden` interruptions.
 - **🌐 Chromium Private Network Access (PNA) Support**: Fully compliant with modern Chromium Private Network Access policies (`Access-Control-Allow-Private-Network: true`), allowing seamless communication between public origins (`ytify.pp.ua`) and loopback (`127.0.0.1:9999`).

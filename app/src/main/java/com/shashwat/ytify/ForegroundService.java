@@ -167,10 +167,16 @@ public class ForegroundService extends Service {
             }
         }
         if (subtitle != null) {
-            currentArtist = cleanText(subtitle);
+            String clean = cleanText(subtitle);
+            if (!clean.isEmpty()) {
+                currentArtist = clean;
+            }
         }
         if (album != null) {
-            currentAlbum = cleanText(album);
+            String clean = cleanText(album);
+            if (!clean.isEmpty()) {
+                currentAlbum = clean;
+            }
         }
         if (duration > 0) {
             currentDuration = duration;

@@ -90,11 +90,24 @@ public class MainActivity extends Activity {
       "      );\n" +
       "    } catch (e) { console.error('Error sending media to Android:', e); }\n" +
       "  }\n" +
+      "  function getDomArtist() {\n" +
+      "    try {\n" +
+      "      var el = document.querySelector('.mediaDetails #author, #author, .author, .miniplayer #author');\n" +
+      "      if (el) {\n" +
+      "        var text = cleanText(el.innerText || el.textContent || '');\n" +
+      "        if (text) return text;\n" +
+      "      }\n" +
+      "    } catch (e) {}\n" +
+      "    return '';\n" +
+      "  }\n" +
       "  function handleMetadataUpdate(meta) {\n" +
       "    if (!meta) return;\n" +
       "    var title = cleanText(meta.title);\n" +
       "    if (!title) return;\n" +
       "    var artist = cleanText(meta.artist);\n" +
+      "    if (!artist) {\n" +
+      "      artist = getDomArtist();\n" +
+      "    }\n" +
       "    var album = cleanText(meta.album);\n" +
       "    var artwork = '';\n" +
       "    if (meta.artwork && meta.artwork.length > 0) {\n" +
@@ -107,7 +120,11 @@ public class MainActivity extends Activity {
       "      } catch (e) {}\n" +
       "    }\n" +
       "    window.__currentMediaData.title = title;\n" +
-      "    window.__currentMediaData.artist = artist;\n" +
+      "    if (artist) {\n" +
+      "      window.__currentMediaData.artist = artist;\n" +
+      "    } else if (!window.__currentMediaData.artist) {\n" +
+      "      window.__currentMediaData.artist = getDomArtist();\n" +
+      "    }\n" +
       "    window.__currentMediaData.album = album;\n" +
       "    if (window.__currentMediaData.state !== 'paused') {\n" +
       "      window.__currentMediaData.state = 'playing';\n" +
@@ -137,6 +154,10 @@ public class MainActivity extends Activity {
       "    }\n" +
       "  }\n" +
       "  function checkFallbackMetadata() {\n" +
+      "    var domArtist = getDomArtist();\n" +
+      "    if (domArtist && !window.__currentMediaData.artist) {\n" +
+      "      window.__currentMediaData.artist = domArtist;\n" +
+      "    }\n" +
       "    if (!window.__currentMediaData.title && document.title) {\n" +
       "      var t = cleanText(document.title);\n" +
       "      if (t && t.toLowerCase() !== 'ytify' && t.toLowerCase() !== 'free music streaming') {\n" +
@@ -145,6 +166,8 @@ public class MainActivity extends Activity {
       "        if (mini && mini.src) window.__currentMediaData.artwork = mini.src;\n" +
       "        sendToAndroid();\n" +
       "      }\n" +
+      "    } else if (domArtist && window.__currentMediaData.title) {\n" +
+      "      sendToAndroid();\n" +
       "    }\n" +
       "  }\n" +
       "  function hookAudio(audio) {\n" +
@@ -292,6 +315,11 @@ public class MainActivity extends Activity {
       "        }\n" +
       "      } else {\n" +
       "        checkFallbackMetadata();\n" +
+      "      }\n" +
+      "      var da = getDomArtist();\n" +
+      "      if (da && !window.__currentMediaData.artist) {\n" +
+      "        window.__currentMediaData.artist = da;\n" +
+      "        sendToAndroid();\n" +
       "      }\n" +
       "      if (window.__currentAudio) {\n" +
       "        if (!window.__currentAudio.paused && window.__currentMediaData.state !== 'playing') {\n" +

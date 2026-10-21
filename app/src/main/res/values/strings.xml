@@ -1,5 +1,5 @@
 <resources>
-	<string	name="app_name"	translatable="false">Ytify</string>
+	<string	name="app_name"	translatable="false">Ytify-native</string>
 	<string	name="grant_mic">Please Grant Microphone Permission in order to use Speech Recognition</string>
 	<string	name="grant_storage">Please Grant Storage Permission in order to download files</string>
 	<string	name="no_pip">Unfortunately, PIP is not supported on your Android version</string>

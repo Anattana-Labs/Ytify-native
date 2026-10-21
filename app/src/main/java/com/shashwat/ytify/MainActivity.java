@@ -33,6 +33,134 @@ public class MainActivity extends Activity {
 
   private VeltrixWebview web;
   private HttpServer httpServer;
+  private static java.lang.ref.WeakReference<MainActivity> sInstance = null;
+  private static long sLastNoticeTime = 0;
+
+  public static void notifyLocalServerUsed() {
+    MainActivity act = sInstance != null ? sInstance.get() : null;
+    if (act != null) {
+      act.showNativeLocalServerUsed();
+    }
+  }
+
+  public void showNativeLocalServerUsed() {
+    runOnUiThread(new Runnable() {
+      @Override
+      public void run() {
+        try {
+          long now = System.currentTimeMillis();
+          if (now - sLastNoticeTime < 2500) {
+            return;
+          }
+          sLastNoticeTime = now;
+
+          ViewGroup root = findViewById(android.R.id.content);
+          if (root == null) {
+            Toast.makeText(MainActivity.this, "Local server used", Toast.LENGTH_SHORT).show();
+            return;
+          }
+
+          View oldNotice = root.findViewWithTag("native_local_notice");
+          if (oldNotice != null) root.removeView(oldNotice);
+
+          LinearLayout pill = new LinearLayout(MainActivity.this);
+          pill.setTag("native_local_notice");
+          pill.setOrientation(LinearLayout.HORIZONTAL);
+          pill.setGravity(Gravity.CENTER_VERTICAL);
+
+          final float density = getResources().getDisplayMetrics().density;
+          int padH = (int) (14 * density);
+          int padV = (int) (8 * density);
+          pill.setPadding(padH, padV, padH, padV);
+
+          android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+          bg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+          bg.setColor(Color.parseColor("#181825"));
+          bg.setCornerRadius(999 * density);
+          bg.setStroke((int) (1.2f * density), Color.parseColor("#a6e3a1"));
+          pill.setBackground(bg);
+          pill.setElevation(8 * density);
+
+          View tickIcon = new View(MainActivity.this) {
+            private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            private final Path path = new Path();
+
+            {
+              paint.setColor(Color.parseColor("#a6e3a1"));
+              paint.setStyle(Paint.Style.STROKE);
+              paint.setStrokeWidth(2.2f * density);
+              paint.setStrokeCap(Paint.Cap.ROUND);
+              paint.setStrokeJoin(Paint.Join.ROUND);
+            }
+
+            @Override
+            protected void onDraw(Canvas canvas) {
+              super.onDraw(canvas);
+              float w = getWidth();
+              float h = getHeight();
+              path.reset();
+              path.moveTo(w * 0.18f, h * 0.54f);
+              path.lineTo(w * 0.42f, h * 0.78f);
+              path.lineTo(w * 0.82f, h * 0.24f);
+              canvas.drawPath(path, paint);
+            }
+          };
+          int iconSize = (int) (16 * density);
+          LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(iconSize, iconSize);
+          iconParams.setMarginEnd((int) (8 * density));
+          tickIcon.setLayoutParams(iconParams);
+          pill.addView(tickIcon);
+
+          TextView tv = new TextView(MainActivity.this);
+          tv.setText("Local server used");
+          tv.setTextColor(Color.parseColor("#cdd6f4"));
+          tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+          tv.setTypeface(Typeface.DEFAULT_BOLD);
+          pill.addView(tv);
+
+          FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+              ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+          params.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+          params.bottomMargin = (int) (86 * density);
+          pill.setLayoutParams(params);
+
+          pill.setAlpha(0f);
+          pill.setTranslationY(16 * density);
+          root.addView(pill);
+
+          pill.animate()
+              .alpha(1f)
+              .translationY(0f)
+              .setDuration(220)
+              .withEndAction(new Runnable() {
+                @Override
+                public void run() {
+                  pill.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                      pill.animate()
+                          .alpha(0f)
+                          .translationY(16 * density)
+                          .setDuration(220)
+                          .withEndAction(new Runnable() {
+                            @Override
+                            public void run() {
+                              root.removeView(pill);
+                            }
+                          })
+                          .start();
+                    }
+                  }, 2400);
+                }
+              })
+              .start();
+
+        } catch (Exception e) {
+          Toast.makeText(MainActivity.this, "Local server used", Toast.LENGTH_SHORT).show();
+        }
+      }
+    });
+  }
 
   // Start HTTP server
   private void startHttpServer() {
@@ -55,52 +183,6 @@ public class MainActivity extends Activity {
       "  window.__ytify_fetch_interceptor_installed = true;\n" +
       "  var LOCAL_PORT = 9999;\n" +
       "  var LOCAL_URL = 'http://127.0.0.1:' + LOCAL_PORT;\n" +
-      "  function showLocalServerNotification(videoId) {\n" +
-      "    try {\n" +
-      "      if (typeof Android !== 'undefined' && Android.showToast) {\n" +
-      "        Android.showToast('⚡ Local Server Stream Used (localhost:9999)');\n" +
-      "      }\n" +
-      "    } catch(e) {}\n" +
-      "    try {\n" +
-      "      var id = '__ytify_local_snackbar';\n" +
-      "      var existing = document.getElementById(id);\n" +
-      "      if (existing) existing.remove();\n" +
-      "      var snack = document.createElement('div');\n" +
-      "      snack.id = id;\n" +
-      "      snack.style.position = 'fixed';\n" +
-      "      snack.style.bottom = '82px';\n" +
-      "      snack.style.left = '50%';\n" +
-      "      snack.style.transform = 'translateX(-50%)';\n" +
-      "      snack.style.zIndex = '999999';\n" +
-      "      snack.style.backgroundColor = '#181825';\n" +
-      "      snack.style.color = '#a6e3a1';\n" +
-      "      snack.style.padding = '8px 16px';\n" +
-      "      snack.style.borderRadius = '20px';\n" +
-      "      snack.style.boxShadow = '0 6px 20px rgba(0,0,0,0.6)';\n" +
-      "      snack.style.border = '1px solid #a6e3a1';\n" +
-      "      snack.style.fontSize = '12px';\n" +
-      "      snack.style.fontWeight = '600';\n" +
-      "      snack.style.display = 'flex';\n" +
-      "      snack.style.alignItems = 'center';\n" +
-      "      snack.style.gap = '6px';\n" +
-      "      snack.style.pointerEvents = 'none';\n" +
-      "      snack.style.transition = 'opacity 0.3s ease, transform 0.3s ease';\n" +
-      "      snack.style.opacity = '0';\n" +
-      "      snack.innerHTML = '<span>⚡</span> Local Server Stream Used (localhost:9999)';\n" +
-      "      document.body.appendChild(snack);\n" +
-      "      requestAnimationFrame(function() {\n" +
-      "        snack.style.opacity = '1';\n" +
-      "        snack.style.transform = 'translateX(-50%) translateY(-6px)';\n" +
-      "      });\n" +
-      "      setTimeout(function() {\n" +
-      "        snack.style.opacity = '0';\n" +
-      "        snack.style.transform = 'translateX(-50%) translateY(10px)';\n" +
-      "        setTimeout(function() { if (snack.parentNode) snack.remove(); }, 400);\n" +
-      "      }, 3500);\n" +
-      "    } catch(err) {\n" +
-      "      console.error('[YtifyNative] Snackbar error:', err);\n" +
-      "    }\n" +
-      "  }\n" +
       "  var origFetch = window.fetch;\n" +
       "  window.fetch = async function(resource, init) {\n" +
       "    try {\n" +
@@ -124,7 +206,9 @@ public class MainActivity extends Activity {
       "          });\n" +
       "          if (localRes && localRes.ok) {\n" +
       "            console.log('[YtifyNative] Successfully resolved stream from localhost:9999 for:', videoId);\n" +
-      "            showLocalServerNotification(videoId);\n" +
+      "            if (typeof Android !== 'undefined' && Android.onLocalServerUsed) {\n" +
+      "              Android.onLocalServerUsed();\n" +
+      "            }\n" +
       "            return localRes;\n" +
       "          }\n" +
       "          console.warn('[YtifyNative] Localhost:9999 returned status ' + (localRes ? localRes.status : 'null') + ', falling back to remote...');\n" +
@@ -518,6 +602,7 @@ public class MainActivity extends Activity {
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
+    sInstance = new java.lang.ref.WeakReference<>(this);
     setContentView(R.layout.main);
     WebView.setWebContentsDebuggingEnabled(true);
 
@@ -785,6 +870,11 @@ public class MainActivity extends Activity {
     }
 
     @JavascriptInterface
+    public void onLocalServerUsed() {
+      showNativeLocalServerUsed();
+    }
+
+    @JavascriptInterface
     public void showToast(String txt) {
 
       Toast.makeText(getApplicationContext(), txt + "", Toast.LENGTH_SHORT).show();
@@ -1019,6 +1109,10 @@ public class MainActivity extends Activity {
   @Override
   public void onDestroy() {
     super.onDestroy();
+
+    if (sInstance != null && sInstance.get() == this) {
+      sInstance = null;
+    }
 
     if (httpServer != null && httpServer.isRunning()) {
       httpServer.stop();

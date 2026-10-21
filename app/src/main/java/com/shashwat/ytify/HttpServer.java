@@ -209,6 +209,7 @@ public class HttpServer extends NanoHTTPD {
     private Response handleStreamsRequest(String videoId, Map<String, String> corsHeaders) {
         try {
             JSONObject extracted = PlaybackResolver.resolveStreams(videoId);
+            MainActivity.notifyLocalServerUsed();
             Response response = newFixedLengthResponse(Response.Status.OK, "application/json", extracted.toString());
             addCorsHeaders(response, corsHeaders);
             return response;

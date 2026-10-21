@@ -125,33 +125,6 @@ public class MainActivity extends Activity {
       "          if (localRes && localRes.ok) {\n" +
       "            console.log('[YtifyNative] Successfully resolved stream from localhost:9999 for:', videoId);\n" +
       "            showLocalServerNotification(videoId);\n" +
-      "            try {\n" +
-      "              var data = await localRes.clone().json();\n" +
-      "              if (data && data.adaptiveFormats && data.adaptiveFormats.length > 0) {\n" +
-      "                var has251 = data.adaptiveFormats.some(function(f) { return f.url && f.url.includes('itag=251'); });\n" +
-      "                var has140 = data.adaptiveFormats.some(function(f) { return f.url && f.url.includes('itag=140'); });\n" +
-      "                if (!has251 && data.adaptiveFormats[0]) {\n" +
-      "                  var c251 = Object.assign({}, data.adaptiveFormats[0]);\n" +
-      "                  var origU251 = c251.url || '';\n" +
-      "                  c251.url = origU251.includes('/proxy?') ? origU251.replace(/itag=\\d+/, 'itag=251') : (LOCAL_URL + '/proxy?itag=251&url=' + encodeURIComponent(origU251));\n" +
-      "                  c251.itag = 251;\n" +
-      "                  c251.type = 'audio/webm; codecs=\"opus\"';\n" +
-      "                  data.adaptiveFormats.push(c251);\n" +
-      "                }\n" +
-      "                if (!has140 && data.adaptiveFormats[0]) {\n" +
-      "                  var c140 = Object.assign({}, data.adaptiveFormats[0]);\n" +
-      "                  var origU140 = c140.url || '';\n" +
-      "                  c140.url = origU140.includes('/proxy?') ? origU140.replace(/itag=\\d+/, 'itag=140') : (LOCAL_URL + '/proxy?itag=140&url=' + encodeURIComponent(origU140));\n" +
-      "                  c140.itag = 140;\n" +
-      "                  c140.type = 'audio/mp4; codecs=\"mp4a.40.2\"';\n" +
-      "                  data.adaptiveFormats.push(c140);\n" +
-      "                }\n" +
-      "                return new Response(JSON.stringify(data), {\n" +
-      "                  status: 200,\n" +
-      "                  headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }\n" +
-      "                });\n" +
-      "              }\n" +
-      "            } catch(e) {}\n" +
       "            return localRes;\n" +
       "          }\n" +
       "          console.warn('[YtifyNative] Localhost:9999 returned status ' + (localRes ? localRes.status : 'null') + ', falling back to remote...');\n" +

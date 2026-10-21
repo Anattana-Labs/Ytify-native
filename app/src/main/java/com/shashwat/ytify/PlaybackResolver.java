@@ -293,8 +293,7 @@ public class PlaybackResolver {
                     cleanFormat.put("encoding", mime.contains("opus") ? "opus" : "m4a");
                 }
 
-                String proxiedUrl = "http://127.0.0.1:9999/proxy?itag=" + itagVal + "&url=" + URLEncoder.encode(rawUrl, "UTF-8");
-                cleanFormat.put("url", proxiedUrl);
+                cleanFormat.put("url", rawUrl);
 
                 outAdaptiveFormats.put(cleanFormat);
             }
@@ -334,8 +333,7 @@ public class PlaybackResolver {
                 cleanFormat.put("quality", baseRes);
                 cleanFormat.put("qualityLabel", qLabel);
 
-                String proxiedUrl = "http://127.0.0.1:9999/proxy?itag=" + itagVal + "&url=" + URLEncoder.encode(rawUrl, "UTF-8");
-                cleanFormat.put("url", proxiedUrl);
+                cleanFormat.put("url", rawUrl);
 
                 outFormatStreams.put(cleanFormat);
             }
@@ -384,7 +382,7 @@ public class PlaybackResolver {
         result.put("recommendedVideos", new JSONArray());
         result.put("captions", outCaptions);
         result.put("liveNow", false);
-        result.put("proxy", "http://127.0.0.1:9999");
+        result.put("proxy", "");
 
         JSONObject outStreamingData = new JSONObject();
         outStreamingData.put("adaptiveFormats", outAdaptiveFormats);

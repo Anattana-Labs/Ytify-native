@@ -110,14 +110,14 @@ public class HttpServer extends NanoHTTPD {
 
     private Response handleProxyRequest(IHTTPSession session, Map<String, String> corsHeaders) {
         try {
-            Map<String, String> parms = session.getParms();
-            String targetUrl = parms.get("url");
+            String targetUrl = null;
+            String qs = session.getQueryParameterString();
+            if (qs != null && qs.contains("url=")) {
+                int idx = qs.indexOf("url=");
+                targetUrl = URLDecoder.decode(qs.substring(idx + 4), "UTF-8");
+            }
             if (targetUrl == null || targetUrl.trim().isEmpty()) {
-                String qs = session.getQueryParameterString();
-                if (qs != null && qs.contains("url=")) {
-                    int idx = qs.indexOf("url=");
-                    targetUrl = URLDecoder.decode(qs.substring(idx + 4), "UTF-8");
-                }
+                targetUrl = session.getParms().get("url");
             }
             if (targetUrl == null || targetUrl.trim().isEmpty()) {
                 return createErrorResponse(Response.Status.BAD_REQUEST, "Missing url parameter", corsHeaders);

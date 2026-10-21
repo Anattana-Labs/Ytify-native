@@ -15,7 +15,8 @@ import java.io.*;
 import org.json.*;
 import android.content.pm.*;
 import android.provider.Settings;
-import java.net.URLEncoder;
+import java.net.*;
+import java.util.*;
 import android.content.SharedPreferences;
 import android.webkit.CookieManager;
 
@@ -224,18 +225,6 @@ public class MainActivity extends Activity {
       "  var LOCAL_URL = 'http://127.0.0.1:' + LOCAL_PORT;\n" +
       "  window.__ytify_video_formats = [];\n" +
       "  try {\n" +
-      "    var OrigURL = window.URL;\n" +
-      "    window.URL = function(url, base) {\n" +
-      "      if (typeof url === 'string' && (url === 'Resolution' || url.endsWith('/Resolution') || url.trim() === '')) {\n" +
-      "        return new OrigURL('http://127.0.0.1:' + LOCAL_PORT + '/dummy_res');\n" +
-      "      }\n" +
-      "      return base !== undefined ? new OrigURL(url, base) : new OrigURL(url);\n" +
-      "    };\n" +
-      "    window.URL.prototype = OrigURL.prototype;\n" +
-      "    window.URL.createObjectURL = OrigURL.createObjectURL;\n" +
-      "    window.URL.revokeObjectURL = OrigURL.revokeObjectURL;\n" +
-      "  } catch(e) {}\n" +
-      "  try {\n" +
       "    var origSetAttribute = Element.prototype.setAttribute;\n" +
       "    Element.prototype.setAttribute = function(name, val) {\n" +
       "      if (this instanceof HTMLVideoElement && typeof name === 'string' && name.toLowerCase() === 'crossorigin') {\n" +
@@ -243,14 +232,15 @@ public class MainActivity extends Activity {
       "      }\n" +
       "      return origSetAttribute.apply(this, arguments);\n" +
       "    };\n" +
-      "    var origCrossDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'crossOrigin');\n" +
-      "    if (origCrossDesc && origCrossDesc.set) {\n" +
-      "      Object.defineProperty(HTMLMediaElement.prototype, 'crossOrigin', {\n" +
-      "        get: function() { return null; },\n" +
-      "        set: function() {},\n" +
-      "        configurable: true\n" +
-      "      });\n" +
-      "    }\n" +
+      "    Object.defineProperty(HTMLVideoElement.prototype, 'onerror', {\n" +
+      "      get: function() { return this._custom_onerror || null; },\n" +
+      "      set: function(fn) {\n" +
+      "        this._custom_onerror = function(e) {\n" +
+      "          console.warn('[YtifyNative] Trapped video element error (audio protected)');\n" +
+      "        };\n" +
+      "      },\n" +
+      "      configurable: true\n" +
+      "    });\n" +
       "  } catch(e) {}\n" +
       "  function pickBestVideoUrl() {\n" +
       "    var sel = document.querySelector('.watcher select');\n" +
@@ -331,11 +321,12 @@ public class MainActivity extends Activity {
       "  try {\n" +
       "    var origVideoSrcDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');\n" +
       "    if (origVideoSrcDesc && origVideoSrcDesc.set) {\n" +
-      "      var origSetSrc = origVideoSrcDesc.set;\n" +
-      "      origVideoSrcDesc.set = function(val) {\n" +
-      "        if (this instanceof HTMLVideoElement) {\n" +
+      "      var origSetMediaSrc = origVideoSrcDesc.set;\n" +
+      "      Object.defineProperty(HTMLVideoElement.prototype, 'src', {\n" +
+      "        get: function() { return origVideoSrcDesc.get ? origVideoSrcDesc.get.call(this) : (this.getAttribute('src') || ''); },\n" +
+      "        set: function(val) {\n" +
       "          this.removeAttribute('crossorigin');\n" +
-      "          if (typeof val === 'string' && (val === 'Resolution' || val.endsWith('/Resolution') || val.includes('dummy_res') || !val.startsWith('http'))) {\n" +
+      "          if (typeof val === 'string' && (!val.startsWith('http') || val.includes('dummy') || val.endsWith('Resolution'))) {\n" +
       "            var best = pickBestVideoUrl();\n" +
       "            if (best) {\n" +
       "              val = best;\n" +
@@ -343,9 +334,9 @@ public class MainActivity extends Activity {
       "              var self = this;\n" +
       "              setTimeout(function() {\n" +
       "                var b = pickBestVideoUrl();\n" +
-      "                if (b && (!self.src || self.src.includes('dummy_res') || self.src.endsWith('/Resolution'))) {\n" +
+      "                if (b && (!self.src || !self.src.startsWith('http'))) {\n" +
       "                  self.removeAttribute('crossorigin');\n" +
-      "                  origSetSrc.call(self, b);\n" +
+      "                  origSetMediaSrc.call(self, b);\n" +
       "                  if (window.__currentAudio) self.currentTime = window.__currentAudio.currentTime || 0;\n" +
       "                  self.play().catch(function() {});\n" +
       "                }\n" +
@@ -353,10 +344,10 @@ public class MainActivity extends Activity {
       "              return;\n" +
       "            }\n" +
       "          }\n" +
-      "        }\n" +
-      "        return origSetSrc.call(this, val);\n" +
-      "      };\n" +
-      "      Object.defineProperty(HTMLMediaElement.prototype, 'src', origVideoSrcDesc);\n" +
+      "          return origSetMediaSrc.call(this, val);\n" +
+      "        },\n" +
+      "        configurable: true\n" +
+      "      });\n" +
       "    }\n" +
       "  } catch (e) {}\n" +
       "  document.addEventListener('change', function(e) {\n" +
@@ -372,28 +363,12 @@ public class MainActivity extends Activity {
       "      }\n" +
       "    }\n" +
       "  }, true);\n" +
-      "  document.addEventListener('error', function(e) {\n" +
-      "    if (e.target && e.target instanceof HTMLVideoElement) {\n" +
-      "      var v = e.target;\n" +
-      "      var cur = v.currentSrc || v.src || '';\n" +
-      "      if (cur.startsWith('http') && !cur.includes(':9999/proxy') && !cur.includes('dummy_res')) {\n" +
-      "        var proxied = LOCAL_URL + '/proxy?url=' + encodeURIComponent(cur);\n" +
-      "        console.log('[YtifyNative] Direct video stream failed, falling back to local proxy:', proxied.substring(0, 80));\n" +
-      "        v.removeAttribute('crossorigin');\n" +
-      "        v.src = proxied;\n" +
-      "        if (window.__currentAudio) {\n" +
-      "          v.currentTime = window.__currentAudio.currentTime || 0;\n" +
-      "        }\n" +
-      "        v.play().catch(function() {});\n" +
-      "      }\n" +
-      "    }\n" +
-      "  }, true);\n" +
       "  var observer = new MutationObserver(function() {\n" +
       "    var v = document.querySelector('.watcher video, video');\n" +
       "    if (v) {\n" +
       "      v.removeAttribute('crossorigin');\n" +
       "      var cur = v.getAttribute('src') || '';\n" +
-      "      if (!cur || cur.includes('dummy_res') || cur.endsWith('/Resolution')) {\n" +
+      "      if (!cur || !cur.startsWith('http') || cur.endsWith('Resolution')) {\n" +
       "        var best = pickBestVideoUrl();\n" +
       "        if (best) {\n" +
       "          v.removeAttribute('crossorigin');\n" +
@@ -404,7 +379,17 @@ public class MainActivity extends Activity {
       "      }\n" +
       "    }\n" +
       "  });\n" +
-      "  observer.observe(document.documentElement, { childList: true, subtree: true });\n" +
+      "  function startObserver() {\n" +
+      "    var target = document.documentElement || document.body;\n" +
+      "    if (target) {\n" +
+      "      observer.observe(target, { childList: true, subtree: true });\n" +
+      "    } else {\n" +
+      "      window.addEventListener('DOMContentLoaded', function() {\n" +
+      "        if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true });\n" +
+      "      });\n" +
+      "    }\n" +
+      "  }\n" +
+      "  startObserver();\n" +
       "  console.log('[YtifyNative] Stream core & video patch installed: primary=localhost:9999');\n" +
       "})();\n";
 
@@ -839,6 +824,31 @@ public class MainActivity extends Activity {
 
     web.setWebViewClient(new WebViewClient() {
       @Override
+      public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+        Log.e("WebViewClient", "Error " + errorCode + ": " + description + " for " + failingUrl);
+        super.onReceivedError(view, errorCode, description, failingUrl);
+      }
+
+      @Override
+      public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+          Log.e("WebViewClient", "Error " + error.getErrorCode() + ": " + error.getDescription() + " for " + request.getUrl());
+        }
+        super.onReceivedError(view, request, error);
+      }
+
+      @Override
+      public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+        if (request != null && request.getUrl() != null) {
+          String urlStr = request.getUrl().toString();
+          if (urlStr.contains(".googlevideo.com/videoplayback")) {
+            return handleGoogleVideoIntercept(request);
+          }
+        }
+        return super.shouldInterceptRequest(view, request);
+      }
+
+      @Override
       public void onPageStarted(WebView p1, String p2, Bitmap p3) {
         p1.evaluateJavascript(JS_STREAM_INTERCEPTOR, null);
         p1.evaluateJavascript(JS_MEDIA_SCRIPT, null);
@@ -913,7 +923,63 @@ public class MainActivity extends Activity {
   @Override
   protected void onUserLeaveHint() {
     super.onUserLeaveHint();
-    web.loadUrl("javascript:PIPlayer();");
+    web.loadUrl("javascript:if (typeof PIPlayer === 'function') PIPlayer();");
+  }
+
+  private WebResourceResponse handleGoogleVideoIntercept(WebResourceRequest request) {
+    try {
+      URL url = new URL(request.getUrl().toString());
+      HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+      conn.setRequestMethod(request.getMethod());
+      conn.setConnectTimeout(10000);
+      conn.setReadTimeout(15000);
+      conn.setInstanceFollowRedirects(true);
+
+      Map<String, String> reqHeaders = request.getRequestHeaders();
+      if (reqHeaders != null) {
+        for (Map.Entry<String, String> entry : reqHeaders.entrySet()) {
+          String key = entry.getKey();
+          if (!"Host".equalsIgnoreCase(key) && !"Origin".equalsIgnoreCase(key) && !"Referer".equalsIgnoreCase(key)) {
+            conn.setRequestProperty(key, entry.getValue());
+          }
+        }
+      }
+      if (conn.getRequestProperty("Range") == null) {
+        conn.setRequestProperty("Range", "bytes=0-");
+      }
+      conn.connect();
+
+      int code = conn.getResponseCode();
+      String message = conn.getResponseMessage();
+      if (message == null || message.trim().isEmpty()) {
+        message = code == 206 ? "Partial Content" : "OK";
+      }
+
+      String mimeType = conn.getContentType();
+      if (mimeType == null || mimeType.trim().isEmpty()) {
+        mimeType = request.getUrl().toString().contains("mime=video") ? "video/mp4" : "audio/webm";
+      }
+      if (mimeType.contains(";")) {
+        mimeType = mimeType.split(";")[0].trim();
+      }
+
+      Map<String, String> resHeaders = new HashMap<>();
+      resHeaders.put("Access-Control-Allow-Origin", "*");
+      resHeaders.put("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+      resHeaders.put("Access-Control-Allow-Headers", "*");
+      resHeaders.put("Accept-Ranges", "bytes");
+
+      String cr = conn.getHeaderField("Content-Range");
+      if (cr != null) resHeaders.put("Content-Range", cr);
+      String cl = conn.getHeaderField("Content-Length");
+      if (cl != null) resHeaders.put("Content-Length", cl);
+
+      InputStream is = (code >= 200 && code < 400) ? conn.getInputStream() : conn.getErrorStream();
+      return new WebResourceResponse(mimeType, "UTF-8", code, message, resHeaders, is);
+    } catch (Exception e) {
+      Log.e("MainActivity", "Error intercepting Google Video request: " + e.getMessage(), e);
+      return null;
+    }
   }
 
   public class CustomWebClient extends WebChromeClient {
@@ -923,6 +989,12 @@ public class MainActivity extends Activity {
     private int mOriginalOrientation;
     private int mOriginalSystemUiVisibility;
     public CustomWebClient() {}
+
+    @Override
+    public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
+      Log.d("WebConsole", "[" + consoleMessage.messageLevel() + "] " + consoleMessage.message() + " (" + consoleMessage.sourceId() + ":" + consoleMessage.lineNumber() + ")");
+      return super.onConsoleMessage(consoleMessage);
+    }
 
     public Bitmap getDefaultVideoPoster() {
 

@@ -342,19 +342,28 @@ public class PlaybackResolver {
                     int height = cleanFormat.optInt("height", 0);
                     int width = cleanFormat.optInt("width", 0);
                     int fps = cleanFormat.optInt("fps", 30);
-                    String qLabel = cleanFormat.optString("qualityLabel", "");
-                    if (qLabel.isEmpty() && height > 0) {
-                        qLabel = height + "p";
+                    String rawQLabel = cleanFormat.optString("qualityLabel", "");
+                    String baseRes = "";
+                    if (!rawQLabel.isEmpty()) {
+                        baseRes = rawQLabel.replaceAll("(?i)[^0-9p]", "");
                     }
-                    if (qLabel.isEmpty()) {
-                        qLabel = cleanFormat.optString("quality", "360p");
+                    if (baseRes.isEmpty() && height > 0) {
+                        if (height >= 1800) baseRes = "2160p";
+                        else if (height >= 1200) baseRes = "1440p";
+                        else if (height >= 900) baseRes = "1080p";
+                        else if (height >= 600) baseRes = "720p";
+                        else if (height >= 400) baseRes = "480p";
+                        else if (height >= 300) baseRes = "360p";
+                        else if (height >= 200) baseRes = "240p";
+                        else baseRes = "144p";
                     }
-                    String baseRes = height > 0 ? (height + "p") : qLabel.replaceAll("(?i)[^0-9p]", "");
-                    if (baseRes.isEmpty()) baseRes = qLabel;
+                    if (baseRes.isEmpty()) {
+                        baseRes = cleanFormat.optString("quality", "360p");
+                    }
 
                     cleanFormat.put("resolution", baseRes);
                     cleanFormat.put("quality", baseRes);
-                    cleanFormat.put("qualityLabel", qLabel);
+                    cleanFormat.put("qualityLabel", baseRes);
                     cleanFormat.put("height", height);
                     cleanFormat.put("width", width);
                     cleanFormat.put("fps", fps);
@@ -364,7 +373,14 @@ public class PlaybackResolver {
                     cleanFormat.put("encoding", mime.contains("opus") ? "opus" : "m4a");
                 }
 
-                cleanFormat.put("url", rawUrl);
+                String streamUrl;
+                try {
+                    streamUrl = "http://127.0.0.1:9999/proxy?itag=" + itagVal + "&url=" + URLEncoder.encode(rawUrl, "UTF-8");
+                } catch (Exception e) {
+                    streamUrl = rawUrl;
+                }
+                cleanFormat.put("url", streamUrl);
+                cleanFormat.put("originalUrl", rawUrl);
 
                 outAdaptiveFormats.put(cleanFormat);
             }
@@ -390,21 +406,38 @@ public class PlaybackResolver {
                 cleanFormat.put("bitrate", String.valueOf(br));
                 cleanFormat.put("clen", cleanFormat.optString("contentLength", ""));
 
-                String qLabel = cleanFormat.optString("qualityLabel", "");
-                if (qLabel.isEmpty() && cleanFormat.has("height")) {
-                    qLabel = cleanFormat.optInt("height") + "p";
+                String rawQLabel = cleanFormat.optString("qualityLabel", "");
+                String baseRes = "";
+                if (!rawQLabel.isEmpty()) {
+                    baseRes = rawQLabel.replaceAll("(?i)[^0-9p]", "");
                 }
-                if (qLabel.isEmpty()) {
-                    qLabel = cleanFormat.optString("quality", "360p");
+                if (baseRes.isEmpty() && cleanFormat.has("height")) {
+                    int h = cleanFormat.optInt("height", 0);
+                    if (h >= 1800) baseRes = "2160p";
+                    else if (h >= 1200) baseRes = "1440p";
+                    else if (h >= 900) baseRes = "1080p";
+                    else if (h >= 600) baseRes = "720p";
+                    else if (h >= 400) baseRes = "480p";
+                    else if (h >= 300) baseRes = "360p";
+                    else if (h >= 200) baseRes = "240p";
+                    else baseRes = "144p";
                 }
-                String baseRes = qLabel.replaceAll("(?i)[^0-9p]", "");
-                if (baseRes.isEmpty()) baseRes = qLabel;
+                if (baseRes.isEmpty()) {
+                    baseRes = cleanFormat.optString("quality", "360p");
+                }
 
                 cleanFormat.put("resolution", baseRes);
                 cleanFormat.put("quality", baseRes);
-                cleanFormat.put("qualityLabel", qLabel);
+                cleanFormat.put("qualityLabel", baseRes);
 
-                cleanFormat.put("url", rawUrl);
+                String streamUrl;
+                try {
+                    streamUrl = "http://127.0.0.1:9999/proxy?itag=" + itagVal + "&url=" + URLEncoder.encode(rawUrl, "UTF-8");
+                } catch (Exception e) {
+                    streamUrl = rawUrl;
+                }
+                cleanFormat.put("url", streamUrl);
+                cleanFormat.put("originalUrl", rawUrl);
 
                 outFormatStreams.put(cleanFormat);
             }
@@ -453,7 +486,7 @@ public class PlaybackResolver {
         result.put("recommendedVideos", new JSONArray());
         result.put("captions", outCaptions);
         result.put("liveNow", false);
-        result.put("proxy", "");
+        result.put("proxy", "http://127.0.0.1:9999");
 
         JSONObject outStreamingData = new JSONObject();
         outStreamingData.put("adaptiveFormats", outAdaptiveFormats);

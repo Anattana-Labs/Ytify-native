@@ -16,7 +16,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Pure YouTube InnerTube stream extractor for Ytify.
+ * Pure YouTube InnerTube stream extractor for ytify.
  * Completely local, zero external worker/bucket APIs, zero external extractor library.
  * Direct unciphered InnerTube multi-client pipeline for both audio and video playback.
  */
@@ -473,7 +473,7 @@ public class PlaybackResolver {
             }
         }
 
-        // 4. Construct unified Invidious response for Ytify
+        // 4. Construct unified Invidious response for ytify
         JSONObject result = new JSONObject();
         result.put("id", videoId);
         result.put("videoId", videoId);

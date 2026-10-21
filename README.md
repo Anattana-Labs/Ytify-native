@@ -1,11 +1,11 @@
-# Ytify-native 🎵
+# ytify-native 🎵
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Android%205.0%2B-green.svg)](https://developer.android.com)
 [![APK Size](https://img.shields.io/badge/APK%20Size-~131%20KB-brightgreen.svg)](https://github.com/Anattana-Labs/Ytify-native/releases)
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Anattana--Labs%2FYtify--native-181717.svg?logo=github)](https://github.com/Anattana-Labs/Ytify-native)
 
-**Ytify-native** is an ultra-lightweight, high-performance native Android application for [Ytify](https://ytify.pp.ua) with an embedded, on-device YouTube InnerTube extraction engine and low-latency chunk-streaming proxy.
+**ytify-native** is an ultra-lightweight, high-performance native Android application for [ytify](https://ytify.pp.ua) with an embedded, on-device YouTube InnerTube extraction engine and low-latency chunk-streaming proxy.
 
 It achieves instant, background audio/video playback and lockscreen media session control with a minimal **~131 KB** APK footprint — containing **zero third-party scrapers, zero remote bucket/worker dependencies, and zero telemetry**.
 
@@ -63,7 +63,7 @@ It achieves instant, background audio/video playback and lockscreen media sessio
 ### Core Execution Pipeline
 
 1. **WebView Injection**: On page start, `MainActivity` injects `JS_STREAM_INTERCEPTOR` into the WebView context.
-2. **Media Interception**: When Ytify attempts to resolve tracks via `/api/v1/videos/{id}` or `/s/{id}`, the fetch interceptor redirects the query to `http://127.0.0.1:9999/api/v1/videos/{id}`.
+2. **Media Interception**: When ytify attempts to resolve tracks via `/api/v1/videos/{id}` or `/s/{id}`, the fetch interceptor redirects the query to `http://127.0.0.1:9999/api/v1/videos/{id}`.
 3. **InnerTube Resolution**: `PlaybackResolver` queries YouTube's `youtubei/v1/player` endpoint using unciphered client payloads (`ANDROID_VR` 1.65.10, `VISIONOS`, `TVHTML5`) combined with dynamic `visitorData` acquired from `youtubei/v1/visitor_id`.
 4. **Stream Proxying**: Format URLs are returned as `http://127.0.0.1:9999/proxy?itag={itag}&url={encoded_googlevideo_url}`.
 5. **Bounded Chunk Delivery**: When the HTML5 audio/video element requests media, `HttpServer` uses `MultiChunkInputStream` to request bounded chunks (<= 256 KB) from Google Video CDN, preventing `HTTP 403 Forbidden` range errors and assembling a smooth, continuous byte stream.
@@ -187,7 +187,7 @@ adb logcat -s YtifyHttpServer PlaybackResolver MainActivity
 
 | Permission | Purpose |
 | :--- | :--- |
-| `INTERNET` | Loading the Ytify web interface and fetching YouTube stream chunks |
+| `INTERNET` | Loading the ytify web interface and fetching YouTube stream chunks |
 | `FOREGROUND_SERVICE` | Keeping audio playback active when the screen is turned off or app is minimized |
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | Android 14+ media playback foreground service compliance |
 | `POST_NOTIFICATIONS` | Android 13+ permission for lockscreen & notification media playback controls |

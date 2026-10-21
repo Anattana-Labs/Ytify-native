@@ -27,7 +27,7 @@
             android:paddingTop="36dp"
             android:paddingBottom="16dp">
 
-            <!-- Ytify Logo Badge -->
+            <!-- ytify Logo Badge -->
             <FrameLayout
                 android:layout_width="84dp"
                 android:layout_height="84dp"
@@ -46,7 +46,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
-                android:text="Welcome to\nYtify Native"
+                android:text="Welcome to\nytify"
                 android:textColor="#ffffff"
                 android:textSize="28sp"
                 android:textStyle="bold"

@@ -236,7 +236,7 @@ public class MainActivity extends Activity {
       "      get: function() { return this._custom_onerror || null; },\n" +
       "      set: function(fn) {\n" +
       "        this._custom_onerror = function(e) {\n" +
-      "          console.warn('[YtifyNative] Trapped video element error (audio protected)');\n" +
+      "          console.warn('[ytifyNative] Trapped video element error (audio protected)');\n" +
       "        };\n" +
       "      },\n" +
       "      configurable: true\n" +
@@ -285,7 +285,7 @@ public class MainActivity extends Activity {
       "      if (match && match[1] && !urlStr.includes(':' + LOCAL_PORT)) {\n" +
       "        var videoId = match[1];\n" +
       "        window.__currentVideoId = videoId;\n" +
-      "        console.log('[YtifyNative] Intercepted stream request for videoId:', videoId);\n" +
+      "        console.log('[ytifyNative] Intercepted stream request for videoId:', videoId);\n" +
       "        try {\n" +
       "          var localReqUrl = LOCAL_URL + '/api/v1/videos/' + videoId;\n" +
       "          var localRes = await origFetch(localReqUrl, {\n" +
@@ -294,7 +294,7 @@ public class MainActivity extends Activity {
       "            signal: init && init.signal ? init.signal : undefined\n" +
       "          });\n" +
       "          if (localRes && localRes.ok) {\n" +
-      "            console.log('[YtifyNative] Successfully resolved stream from localhost:9999 for:', videoId);\n" +
+      "            console.log('[ytifyNative] Successfully resolved stream from localhost:9999 for:', videoId);\n" +
       "            if (typeof Android !== 'undefined' && Android.onLocalServerUsed) {\n" +
       "              Android.onLocalServerUsed();\n" +
       "            }\n" +
@@ -303,18 +303,18 @@ public class MainActivity extends Activity {
       "                window.__ytify_video_formats = data.adaptiveFormats.filter(function(f) {\n" +
       "                  return f && f.type && f.type.startsWith('video');\n" +
       "                });\n" +
-      "                console.log('[YtifyNative] Cached video formats:', window.__ytify_video_formats.length);\n" +
+      "                console.log('[ytifyNative] Cached video formats:', window.__ytify_video_formats.length);\n" +
       "              }\n" +
       "            }).catch(function() {});\n" +
       "            return localRes;\n" +
       "          }\n" +
-      "          console.warn('[YtifyNative] Localhost:9999 returned status ' + (localRes ? localRes.status : 'null') + ', falling back to remote...');\n" +
+      "          console.warn('[ytifyNative] Localhost:9999 returned status ' + (localRes ? localRes.status : 'null') + ', falling back to remote...');\n" +
       "        } catch (localErr) {\n" +
-      "          console.warn('[YtifyNative] Localhost:9999 failed:', localErr, ', falling back to remote...');\n" +
+      "          console.warn('[ytifyNative] Localhost:9999 failed:', localErr, ', falling back to remote...');\n" +
       "        }\n" +
       "      }\n" +
       "    } catch (e) {\n" +
-      "      console.error('[YtifyNative] Error in fetch interceptor:', e);\n" +
+      "      console.error('[ytifyNative] Error in fetch interceptor:', e);\n" +
       "    }\n" +
       "    return origFetch.apply(this, arguments);\n" +
       "  };\n" +
@@ -390,7 +390,7 @@ public class MainActivity extends Activity {
       "    }\n" +
       "  }\n" +
       "  startObserver();\n" +
-      "  console.log('[YtifyNative] Stream core & video patch installed: primary=localhost:9999');\n" +
+      "  console.log('[ytifyNative] Stream core & video patch installed: primary=localhost:9999');\n" +
       "})();\n";
 
   private static final String JS_MEDIA_SCRIPT =

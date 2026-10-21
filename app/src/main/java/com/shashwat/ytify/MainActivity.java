@@ -480,24 +480,6 @@ web.loadUrl("javascript:(function () { var script = document.createElement('scri
 
     }
     @JavascriptInterface
-    public void getSNlM0e(String cookies) {
-
-      new Thread(() -> {
-        String response = GeminiWrapper.getSNlM0e(cookies);
-        runOnUiThread(() -> web.evaluateJavascript("callbackSNlM0e.resolve(`" + response + "`)", null));
-      }).start();
-
-    }
-    @JavascriptInterface
-    public void GeminiClient(String url, String headers, String body) {
-
-      new Thread(() -> {
-        JSONObject response = GeminiWrapper.getStream(url, headers, body);
-        runOnUiThread(() -> web.evaluateJavascript("callbackGeminiClient.resolve(" + response + ")", null));
-      }).start();
-
-    }
-    @JavascriptInterface
     public String getAllCookies(String url) {
       String cookies = CookieManager.getInstance().getCookie(url);
       return cookies;

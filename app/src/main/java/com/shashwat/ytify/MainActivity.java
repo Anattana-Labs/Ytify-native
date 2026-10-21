@@ -174,8 +174,7 @@ public class MainActivity extends Activity {
 
           final View onboardingView = getLayoutInflater().inflate(R.layout.onboarding_view, root, false);
           onboardingView.setTag("onboarding_overlay");
-          TextView btnContinue = onboardingView.findViewById(R.id.btn_continue);
-          btnContinue.setTextColor(Color.BLACK);
+          Button btnContinue = onboardingView.findViewById(R.id.btn_continue);
           btnContinue.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {

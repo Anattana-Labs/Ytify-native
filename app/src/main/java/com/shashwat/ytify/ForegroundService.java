@@ -15,26 +15,49 @@ import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Base64;
 import android.util.Log;
+
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class ForegroundService extends Service {
 
     public static final String CHANNEL_ID = "Media";
     public static final String ACTION_UPDATE_NOTIFICATION = "UPDATE_NOTIFICATION";
+    private static final String TAG = "ForegroundService";
+    private static final int NOTIFICATION_ID = 1;
+
     private NotificationManager notificationManager;
     private BroadcastReceiver updateReceiver;
     private MediaSession mediaSession;
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+    private String currentTitle = "";
+    private String currentArtist = "";
+    private String currentAlbum = "Ytify";
+    private String currentArtworkUrl = "";
+    private Bitmap cachedArtwork = null;
+    private long currentDuration = 0;
+    private long currentPosition = 0;
+    private int currentPlaybackState = PlaybackState.STATE_NONE;
 
     @Override
     public void onCreate() {
         super.onCreate();
+        notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        createNotificationChannel();
         initMediaSession();
         registerUpdateReceiver();
-        createNotificationChannel();
     }
-
 
     private void initMediaSession() {
         mediaSession = new MediaSession(getApplicationContext(), "YtifyMediaSession");
@@ -44,295 +67,290 @@ public class ForegroundService extends Service {
             @Override
             public void onPlay() {
                 super.onPlay();
-                getApplicationContext().sendBroadcast(new Intent("TRACKS_TRACKS")
-                        .putExtra("actionname", "PLAY_ACTION"));
-                // Send command to control HTML audio tag
-                getApplicationContext().sendBroadcast(new Intent("AUDIO_CONTROL")
-                        .putExtra("action", "play"));
-                Log.e("audio","play audio tag");
+                broadcastTrackAction("PLAY_ACTION");
             }
 
             @Override
             public void onPause() {
                 super.onPause();
-                getApplicationContext().sendBroadcast(new Intent("TRACKS_TRACKS")
-                        .putExtra("actionname", "PAUSE_ACTION"));
-                // Send command to control HTML audio tag
-                getApplicationContext().sendBroadcast(new Intent("AUDIO_CONTROL")
-                        .putExtra("action", "pause"));
-                Log.e("audio","pause audio tag");
+                broadcastTrackAction("PAUSE_ACTION");
             }
 
             @Override
             public void onSkipToNext() {
                 super.onSkipToNext();
-                // Handle skip to next
-                getApplicationContext().sendBroadcast(new Intent("TRACKS_TRACKS")
-                        .putExtra("actionname", "NEXT_ACTION"));
-                // Send command to control HTML audio tag
-                getApplicationContext().sendBroadcast(new Intent("AUDIO_CONTROL")
-                        .putExtra("action", "next"));
+                broadcastTrackAction("NEXT_ACTION");
             }
 
             @Override
             public void onSkipToPrevious() {
                 super.onSkipToPrevious();
-                // Handle skip to previous
-                getApplicationContext().sendBroadcast(new Intent("TRACKS_TRACKS")
-                        .putExtra("actionname", "PREV_ACTION"));
-                // Send command to control HTML audio tag
-                getApplicationContext().sendBroadcast(new Intent("AUDIO_CONTROL")
-                        .putExtra("action", "previous"));
+                broadcastTrackAction("PREV_ACTION");
             }
-            
+
             @Override
             public void onSeekTo(long pos) {
                 super.onSeekTo(pos);
                 getApplicationContext().sendBroadcast(new Intent("TRACKS_TRACKS")
-                        .putExtra("actionname", "SEEKTO").putExtra("pos", pos+""));
-                // Send command to control HTML audio tag
+                        .putExtra("actionname", "SEEKTO")
+                        .putExtra("pos", String.valueOf(pos)));
                 getApplicationContext().sendBroadcast(new Intent("AUDIO_CONTROL")
                         .putExtra("action", "seekTo")
                         .putExtra("position", pos));
+            }
+
+            @Override
+            public void onStop() {
+                super.onStop();
+                broadcastTrackAction("PAUSE_ACTION");
+                stopForeground(true);
+                stopSelf();
             }
         });
 
         mediaSession.setActive(true);
     }
 
+    private void broadcastTrackAction(String action) {
+        getApplicationContext().sendBroadcast(new Intent("TRACKS_TRACKS")
+                .putExtra("actionname", action));
+        getApplicationContext().sendBroadcast(new Intent("AUDIO_CONTROL")
+                .putExtra("action", action.replace("_ACTION", "").toLowerCase()));
+    }
+
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
-                    "Background Play",
-                    NotificationManager.IMPORTANCE_MIN
+                    "Media Playback",
+                    NotificationManager.IMPORTANCE_LOW
             );
-            notificationManager = getSystemService(NotificationManager.class);
+            channel.setDescription("Ytify media playback controls");
+            channel.setShowBadge(false);
+            channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
             if (notificationManager != null) {
                 notificationManager.createNotificationChannel(channel);
             }
         }
     }
 
-
-    public void updateNotification(String icon, String title, String subtitle, String action, long duration, long currentPosition) {
-
-        Context cont=getApplicationContext();
-
-        byte[] decodedBytes = Base64.decode(icon, Base64.DEFAULT);
-        Bitmap largeIcon = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
-
-
-        int playbackState;
-        if("pause".equals(action)){
-            playbackState= PlaybackState.STATE_PAUSED;
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null) {
+            handleIntent(intent);
         }
-        else if("play".equals(action)){
-            playbackState= PlaybackState.STATE_PLAYING;
-        }else{
-            playbackState= PlaybackState.STATE_BUFFERING;
-        }
-
-        updateMediaSessionMetadata(title, subtitle, largeIcon, duration); 
-        updatePlaybackState(currentPosition, playbackState); 
-
-        Intent openAppIntent = new Intent(cont, MainActivity.class);
-        openAppIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        PendingIntent openAppPendingIntent = PendingIntent.getActivity(cont, 0, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
-
-        Intent playIntent = new Intent(cont, NotificationActionService.class);
-        playIntent.setAction("PLAY_ACTION");
-        PendingIntent playPendingIntent = PendingIntent.getBroadcast(cont, 0, playIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
-
-        Intent pauseIntent = new Intent(cont, NotificationActionService.class);
-        pauseIntent.setAction("PAUSE_ACTION");
-        PendingIntent pausePendingIntent = PendingIntent.getBroadcast(cont, 0, pauseIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
-
-        Intent nextIntent = new Intent(cont, NotificationActionService.class);
-        nextIntent.setAction("NEXT_ACTION");
-        PendingIntent nextPendingIntent = PendingIntent.getBroadcast(cont, 0, nextIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
-
-        Intent prevIntent = new Intent(cont, NotificationActionService.class);
-        prevIntent.setAction("PREV_ACTION");
-        PendingIntent prevPendingIntent = PendingIntent.getBroadcast(cont, 0, prevIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
-
-        Notification.Builder builder = (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
-
-        builder.setSmallIcon(R.drawable.app_icon)
-                .setContentTitle(title)
-                .setContentText(subtitle)
-                .setLargeIcon(largeIcon)
-                .setContentIntent(openAppPendingIntent)
-                .setStyle(new Notification.MediaStyle().setMediaSession(mediaSession.getSessionToken()))
-                .addAction(R.drawable.ic_skip_previous_white, "Previous", prevPendingIntent);
-
-        if ("play".equals(action)) {
-            builder.addAction(R.drawable.ic_pause_white, "Pause", pausePendingIntent)
-                    .addAction(R.drawable.ic_skip_next_white, "Next", nextPendingIntent);
-        } else if ("pause".equals(action))  {
-            builder.addAction(R.drawable.ic_play_arrow_white, "Play", playPendingIntent)
-                    .addAction(R.drawable.ic_skip_next_white, "Next", nextPendingIntent);
-        }else{
-
-            builder.addAction(R.drawable.ic_pause_white, "Pause", pausePendingIntent)
-                    .addAction(R.drawable.ic_skip_next_white, "Next", nextPendingIntent);
-
-        }
-
-
-
-        notificationManager.notify(1, builder.build());
+        return START_NOT_STICKY;
     }
 
+    private void handleIntent(Intent intent) {
+        String title = intent.getStringExtra("title");
+        String subtitle = intent.getStringExtra("subtitle");
+        String album = intent.getStringExtra("album");
+        String icon = intent.getStringExtra("icon");
+        String action = intent.getStringExtra("action");
+        long duration = intent.getLongExtra("duration", 0);
+        long currentPosition = intent.getLongExtra("currentPosition", 0);
 
+        if (title != null && !title.isEmpty()) {
+            currentTitle = title;
+        }
+        if (subtitle != null) {
+            currentArtist = subtitle;
+        }
+        if (album != null && !album.isEmpty()) {
+            currentAlbum = album;
+        }
+        if (duration > 0) {
+            currentDuration = duration;
+        }
+        if (currentPosition >= 0) {
+            this.currentPosition = currentPosition;
+        }
+
+        if ("pause".equalsIgnoreCase(action)) {
+            currentPlaybackState = PlaybackState.STATE_PAUSED;
+        } else if ("play".equalsIgnoreCase(action)) {
+            currentPlaybackState = PlaybackState.STATE_PLAYING;
+        } else {
+            currentPlaybackState = PlaybackState.STATE_BUFFERING;
+        }
+
+        processNotification(icon);
+    }
 
     private void registerUpdateReceiver() {
         updateReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
                 if (ACTION_UPDATE_NOTIFICATION.equals(intent.getAction())) {
-                    String icon = intent.getStringExtra("icon");
-                    String title = intent.getStringExtra("title");
-                    String subtitle = intent.getStringExtra("subtitle");
-                    String action = intent.getStringExtra("action");
-                    long duration = intent.getLongExtra("duration", 0);
-                    long currentPosition = intent.getLongExtra("currentPosition", 0);
-
-                    updateNotification(icon, title, subtitle, action, duration, currentPosition);
+                    handleIntent(intent);
                 }
             }
         };
 
         IntentFilter filter = new IntentFilter(ACTION_UPDATE_NOTIFICATION);
-
-          if (Build.VERSION.SDK_INT >= 34 && getApplicationInfo().targetSdkVersion >= 34) {
-           registerReceiver(updateReceiver, filter,RECEIVER_EXPORTED);
-          }
-          else{
-           registerReceiver(updateReceiver, filter);
-          }
+        if (Build.VERSION.SDK_INT >= 34 && getApplicationInfo().targetSdkVersion >= 34) {
+            registerReceiver(updateReceiver, filter, RECEIVER_EXPORTED);
+        } else {
+            registerReceiver(updateReceiver, filter);
+        }
     }
 
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null) {
-            notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            setupNotification(intent);
+    private void processNotification(String iconUrl) {
+        if (iconUrl != null && !iconUrl.isEmpty() && !iconUrl.equals(currentArtworkUrl)) {
+            currentArtworkUrl = iconUrl;
+            renderNotificationAndSession();
+            executor.execute(() -> {
+                Bitmap loaded = loadBitmap(iconUrl);
+                if (loaded != null) {
+                    cachedArtwork = loaded;
+                    mainHandler.post(this::renderNotificationAndSession);
+                }
+            });
+        } else {
+            renderNotificationAndSession();
         }
-        return START_NOT_STICKY;
     }
 
-    private void setupNotification(Intent intent) {
-        long duration = intent.getLongExtra("duration", 0);
-        long currentPosition = intent.getLongExtra("currentPosition", 0);
-        String action = intent.getStringExtra("action");
-        
-        int playbackState;
-        if("pause".equals(action)){
-            playbackState= PlaybackState.STATE_PAUSED;
-        }
-        else if("play".equals(action)){
-            playbackState= PlaybackState.STATE_PLAYING;
-        }else{
-            playbackState= PlaybackState.STATE_BUFFERING;
-        }
-        
-        
-        String title = intent.getStringExtra("title");
-        String subtitle = intent.getStringExtra("subtitle");
-        String icon = intent.getStringExtra("icon");
+    private Bitmap loadBitmap(String source) {
+        if (source == null || source.isEmpty()) return null;
+        try {
+            if (source.startsWith("data:image")) {
+                int comma = source.indexOf(",");
+                if (comma > 0) {
+                    byte[] bytes = Base64.decode(source.substring(comma + 1), Base64.DEFAULT);
+                    return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                }
+            } else if (!source.startsWith("http://") && !source.startsWith("https://")) {
+                byte[] bytes = Base64.decode(source, Base64.DEFAULT);
+                return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+            }
 
-        byte[] decodedBytes = Base64.decode(icon, Base64.DEFAULT);
-        Bitmap largeIcon = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
+            URL url = new URL(source);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(6000);
+            conn.setReadTimeout(6000);
+            conn.setDoInput(true);
+            conn.connect();
+            try (InputStream is = conn.getInputStream()) {
+                return BitmapFactory.decodeStream(is);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to load artwork: " + e.getMessage());
+            return null;
+        }
+    }
 
-        Intent openAppIntent = new Intent(this, MainActivity.class);
+    private void renderNotificationAndSession() {
+        Context cont = getApplicationContext();
+        Bitmap displayArt = cachedArtwork != null
+                ? cachedArtwork
+                : BitmapFactory.decodeResource(getResources(), R.drawable.app_icon);
+
+        updateMediaSessionMetadata(currentTitle, currentArtist, currentAlbum, displayArt, currentDuration);
+        updatePlaybackState(currentPosition, currentPlaybackState);
+
+        int pendingIntentFlags = PendingIntent.FLAG_UPDATE_CURRENT |
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+
+        Intent openAppIntent = new Intent(cont, MainActivity.class);
         openAppIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        PendingIntent openAppPendingIntent = PendingIntent.getActivity(this, 0, openAppIntent, PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        PendingIntent openAppPendingIntent = PendingIntent.getActivity(cont, 0, openAppIntent, pendingIntentFlags);
 
-        Intent playIntent = new Intent(this, NotificationActionService.class);
-        playIntent.setAction("PLAY_ACTION");
-        PendingIntent playPendingIntent = PendingIntent.getBroadcast(this, 0, playIntent, PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-
-        Intent pauseIntent = new Intent(this, NotificationActionService.class);
-        pauseIntent.setAction("PAUSE_ACTION");
-        PendingIntent pausePendingIntent = PendingIntent.getBroadcast(this, 0, pauseIntent, PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-
-        Intent nextIntent = new Intent(this, NotificationActionService.class);
-        nextIntent.setAction("NEXT_ACTION");
-        PendingIntent nextPendingIntent = PendingIntent.getBroadcast(this, 0, nextIntent, PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-
-        Intent prevIntent = new Intent(this, NotificationActionService.class);
+        Intent prevIntent = new Intent(cont, NotificationActionService.class);
         prevIntent.setAction("PREV_ACTION");
-        PendingIntent prevPendingIntent = PendingIntent.getBroadcast(this, 0, prevIntent, PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        PendingIntent prevPendingIntent = PendingIntent.getBroadcast(cont, 1, prevIntent, pendingIntentFlags);
 
-        Notification.Builder builder = (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
+        Intent playIntent = new Intent(cont, NotificationActionService.class);
+        playIntent.setAction("PLAY_ACTION");
+        PendingIntent playPendingIntent = PendingIntent.getBroadcast(cont, 2, playIntent, pendingIntentFlags);
 
-                builder.setSmallIcon(R.drawable.app_icon)
-                .setContentTitle(title)
-                .setContentText(subtitle)
-                .setLargeIcon(largeIcon)
-                .setStyle(new Notification.MediaStyle().setMediaSession(mediaSession.getSessionToken()))
-                .setContentIntent(openAppPendingIntent);
+        Intent pauseIntent = new Intent(cont, NotificationActionService.class);
+        pauseIntent.setAction("PAUSE_ACTION");
+        PendingIntent pausePendingIntent = PendingIntent.getBroadcast(cont, 3, pauseIntent, pendingIntentFlags);
 
+        Intent nextIntent = new Intent(cont, NotificationActionService.class);
+        nextIntent.setAction("NEXT_ACTION");
+        PendingIntent nextPendingIntent = PendingIntent.getBroadcast(cont, 4, nextIntent, pendingIntentFlags);
+
+        Notification.Builder builder = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                ? new Notification.Builder(this, CHANNEL_ID)
+                : new Notification.Builder(this);
+
+        Notification.MediaStyle mediaStyle = new Notification.MediaStyle()
+                .setMediaSession(mediaSession.getSessionToken())
+                .setShowActionsInCompactView(0, 1, 2);
+
+        builder.setSmallIcon(R.drawable.app_icon)
+                .setContentTitle(currentTitle.isEmpty() ? "Ytify" : currentTitle)
+                .setContentText(currentArtist.isEmpty() ? "Playing audio" : currentArtist)
+                .setSubText(currentAlbum)
+                .setLargeIcon(displayArt)
+                .setContentIntent(openAppPendingIntent)
+                .setStyle(mediaStyle)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
+                .setOngoing(currentPlaybackState == PlaybackState.STATE_PLAYING);
 
         builder.addAction(R.drawable.ic_skip_previous_white, "Previous", prevPendingIntent);
-        
-                    builder.addAction(R.drawable.ic_pause_white, "Pause", pausePendingIntent);
-                    
-                builder.addAction(R.drawable.ic_skip_next_white, "Next", nextPendingIntent);
+
+        if (currentPlaybackState == PlaybackState.STATE_PLAYING) {
+            builder.addAction(R.drawable.ic_pause_white, "Pause", pausePendingIntent);
+        } else {
+            builder.addAction(R.drawable.ic_play_arrow_white, "Play", playPendingIntent);
+        }
+
+        builder.addAction(R.drawable.ic_skip_next_white, "Next", nextPendingIntent);
 
         Notification notification = builder.build();
-
-        // Update MediaSession metadata and playback state
-        updateMediaSessionMetadata(title, subtitle, largeIcon, duration);
-        updatePlaybackState(currentPosition, playbackState);
-
-        startForeground(1, notification);
+        startForeground(NOTIFICATION_ID, notification);
     }
-    
-    
-    
-    
-    
-    
-    private void updateMediaSessionMetadata(String title, String artist, Bitmap albumArt, long duration) {
-        MediaMetadata metadata = new MediaMetadata.Builder()
+
+    private void updateMediaSessionMetadata(String title, String artist, String album, Bitmap albumArt, long duration) {
+        MediaMetadata.Builder metaBuilder = new MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, title)
                 .putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
-                .putString(MediaMetadata.METADATA_KEY_ALBUM, "Ytify")
-                .putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, albumArt)
-                .putLong(MediaMetadata.METADATA_KEY_DURATION, duration)
-                .build();
+                .putString(MediaMetadata.METADATA_KEY_ALBUM, album)
+                .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, title)
+                .putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, artist)
+                .putLong(MediaMetadata.METADATA_KEY_DURATION, duration);
 
-        mediaSession.setMetadata(metadata);
+        if (albumArt != null) {
+            metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, albumArt);
+            metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_ART, albumArt);
+            metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, albumArt);
+        }
+
+        mediaSession.setMetadata(metaBuilder.build());
     }
-
-
-
-
-
-
 
     private void updatePlaybackState(long currentPosition, int state) {
-        PlaybackState playbackState = new PlaybackState.Builder()
+        long updateTime = SystemClock.elapsedRealtime();
+        PlaybackState.Builder stateBuilder = new PlaybackState.Builder()
                 .setActions(PlaybackState.ACTION_PLAY
-                        | PlaybackState.ACTION_SKIP_TO_NEXT
                         | PlaybackState.ACTION_PAUSE
-                        | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SEEK_TO)
-                .setState(state, currentPosition, 1.0f) // 1.0f for playback speed
-                .build();
-                
-                
-                // rn it doesn't have a function to increase the playback speed if someone increases it from the youtube player , cuz people don't usually use that , and i am too lazy to implement it here
+                        | PlaybackState.ACTION_PLAY_PAUSE
+                        | PlaybackState.ACTION_SKIP_TO_NEXT
+                        | PlaybackState.ACTION_SKIP_TO_PREVIOUS
+                        | PlaybackState.ACTION_SEEK_TO
+                        | PlaybackState.ACTION_STOP)
+                .setState(state, currentPosition, 1.0f, updateTime);
 
-        mediaSession.setPlaybackState(playbackState);
+        mediaSession.setPlaybackState(stateBuilder.build());
     }
-
 
     @Override
     public void onDestroy() {
         super.onDestroy();
-        unregisterReceiver(updateReceiver);
+        if (updateReceiver != null) {
+            try {
+                unregisterReceiver(updateReceiver);
+            } catch (Exception ignored) {}
+        }
+        if (mediaSession != null) {
+            mediaSession.setActive(false);
+            mediaSession.release();
+        }
+        executor.shutdownNow();
     }
 
     @Override

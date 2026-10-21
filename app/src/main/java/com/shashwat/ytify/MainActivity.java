@@ -46,10 +46,182 @@ public class MainActivity extends Activity {
     }
   }
 
+  private static final String JS_MEDIA_SCRIPT =
+      "(function() {\n" +
+      "  if (window.__ytify_native_injected) return;\n" +
+      "  window.__ytify_native_injected = true;\n" +
+      "  window.__mediaSessionHandlers = window.__mediaSessionHandlers || {};\n" +
+      "  window.__currentAudio = window.__currentAudio || null;\n" +
+      "  window.__currentMediaData = window.__currentMediaData || {\n" +
+      "    title: '', artist: '', album: 'Ytify', artwork: '', duration: 0, position: 0, state: 'none'\n" +
+      "  };\n" +
+      "  function sendToAndroid() {\n" +
+      "    try {\n" +
+      "      if (typeof Android === 'undefined' || !Android.updateMedia) return;\n" +
+      "      var d = window.__currentMediaData;\n" +
+      "      var dur = d.duration || 0;\n" +
+      "      var pos = d.position || 0;\n" +
+      "      if (window.__currentAudio) {\n" +
+      "        if ((!dur || isNaN(dur)) && window.__currentAudio.duration && !isNaN(window.__currentAudio.duration)) {\n" +
+      "          dur = window.__currentAudio.duration * 1000;\n" +
+      "        }\n" +
+      "        if (window.__currentAudio.currentTime && !isNaN(window.__currentAudio.currentTime)) {\n" +
+      "          pos = window.__currentAudio.currentTime * 1000;\n" +
+      "        }\n" +
+      "      }\n" +
+      "      Android.updateMedia(\n" +
+      "        d.title || document.title || 'Ytify',\n" +
+      "        d.artist || '',\n" +
+      "        d.album || 'Ytify',\n" +
+      "        d.artwork || '',\n" +
+      "        Math.round(dur || 0),\n" +
+      "        Math.round(pos || 0),\n" +
+      "        d.state || 'none'\n" +
+      "      );\n" +
+      "    } catch (e) { console.error('Error sending media to Android:', e); }\n" +
+      "  }\n" +
+      "  function hookAudio(audio) {\n" +
+      "    if (!audio || audio.__hooked) return;\n" +
+      "    audio.__hooked = true;\n" +
+      "    window.__currentAudio = audio;\n" +
+      "    audio.addEventListener('play', function() {\n" +
+      "      window.__currentAudio = audio;\n" +
+      "      window.__currentMediaData.state = 'playing';\n" +
+      "      window.__currentMediaData.position = (audio.currentTime || 0) * 1000;\n" +
+      "      if (audio.duration && !isNaN(audio.duration)) {\n" +
+      "        window.__currentMediaData.duration = audio.duration * 1000;\n" +
+      "      }\n" +
+      "      sendToAndroid();\n" +
+      "    });\n" +
+      "    audio.addEventListener('pause', function() {\n" +
+      "      window.__currentMediaData.state = 'paused';\n" +
+      "      window.__currentMediaData.position = (audio.currentTime || 0) * 1000;\n" +
+      "      sendToAndroid();\n" +
+      "    });\n" +
+      "    audio.addEventListener('ended', function() {\n" +
+      "      window.__currentMediaData.state = 'paused';\n" +
+      "      sendToAndroid();\n" +
+      "    });\n" +
+      "    audio.addEventListener('timeupdate', function() {\n" +
+      "      window.__currentMediaData.position = (audio.currentTime || 0) * 1000;\n" +
+      "      if (audio.duration && !isNaN(audio.duration)) {\n" +
+      "        window.__currentMediaData.duration = audio.duration * 1000;\n" +
+      "      }\n" +
+      "    });\n" +
+      "    audio.addEventListener('loadedmetadata', function() {\n" +
+      "      if (audio.duration && !isNaN(audio.duration)) {\n" +
+      "        window.__currentMediaData.duration = audio.duration * 1000;\n" +
+      "      }\n" +
+      "      sendToAndroid();\n" +
+      "    });\n" +
+      "  }\n" +
+      "  var OrigAudio = window.Audio;\n" +
+      "  if (OrigAudio) {\n" +
+      "    window.Audio = function(...args) {\n" +
+      "      var a = new OrigAudio(...args);\n" +
+      "      hookAudio(a);\n" +
+      "      return a;\n" +
+      "    };\n" +
+      "    window.Audio.prototype = OrigAudio.prototype;\n" +
+      "  }\n" +
+      "  if ('mediaSession' in navigator) {\n" +
+      "    var ms = navigator.mediaSession;\n" +
+      "    var origSetActionHandler = ms.setActionHandler ? ms.setActionHandler.bind(ms) : null;\n" +
+      "    ms.setActionHandler = function(action, handler) {\n" +
+      "      window.__mediaSessionHandlers[action] = handler;\n" +
+      "      if (origSetActionHandler) {\n" +
+      "        try { origSetActionHandler(action, handler); } catch (e) {}\n" +
+      "      }\n" +
+      "    };\n" +
+      "    var origSetPosition = ms.setPositionState ? ms.setPositionState.bind(ms) : null;\n" +
+      "    ms.setPositionState = function(state) {\n" +
+      "      if (origSetPosition) {\n" +
+      "        try { origSetPosition(state); } catch (e) {}\n" +
+      "      }\n" +
+      "      if (state) {\n" +
+      "        if (state.duration !== undefined) window.__currentMediaData.duration = state.duration * 1000;\n" +
+      "        if (state.position !== undefined) window.__currentMediaData.position = state.position * 1000;\n" +
+      "        sendToAndroid();\n" +
+      "      }\n" +
+      "    };\n" +
+      "    var _metadata = ms.metadata;\n" +
+      "    try {\n" +
+      "      Object.defineProperty(ms, 'metadata', {\n" +
+      "        configurable: true,\n" +
+      "        enumerable: true,\n" +
+      "        get() { return _metadata; },\n" +
+      "        set(meta) {\n" +
+      "          _metadata = meta;\n" +
+      "          if (meta) {\n" +
+      "            window.__currentMediaData.title = meta.title || '';\n" +
+      "            window.__currentMediaData.artist = meta.artist || '';\n" +
+      "            window.__currentMediaData.album = meta.album || 'Ytify';\n" +
+      "            if (meta.artwork && meta.artwork.length > 0) {\n" +
+      "              window.__currentMediaData.artwork = meta.artwork[meta.artwork.length - 1].src || '';\n" +
+      "            }\n" +
+      "          }\n" +
+      "          sendToAndroid();\n" +
+      "        }\n" +
+      "      });\n" +
+      "    } catch (e) { console.error('Error defining metadata property:', e); }\n" +
+      "    var _playbackState = ms.playbackState;\n" +
+      "    try {\n" +
+      "      Object.defineProperty(ms, 'playbackState', {\n" +
+      "        configurable: true,\n" +
+      "        enumerable: true,\n" +
+      "        get() { return _playbackState; },\n" +
+      "        set(val) {\n" +
+      "          _playbackState = val;\n" +
+      "          window.__currentMediaData.state = val === 'playing' ? 'playing' : (val === 'paused' ? 'paused' : 'none');\n" +
+      "          sendToAndroid();\n" +
+      "        }\n" +
+      "      });\n" +
+      "    } catch (e) { console.error('Error defining playbackState property:', e); }\n" +
+      "  }\n" +
+      "  window.__nativePlay = function() {\n" +
+      "    if (window.__mediaSessionHandlers['play']) {\n" +
+      "      window.__mediaSessionHandlers['play']();\n" +
+      "    } else if (window.__currentAudio) {\n" +
+      "      window.__currentAudio.play();\n" +
+      "    }\n" +
+      "  };\n" +
+      "  window.__nativePause = function() {\n" +
+      "    if (window.__mediaSessionHandlers['pause']) {\n" +
+      "      window.__mediaSessionHandlers['pause']();\n" +
+      "    } else if (window.__currentAudio) {\n" +
+      "      window.__currentAudio.pause();\n" +
+      "    }\n" +
+      "  };\n" +
+      "  window.__nativeNext = function() {\n" +
+      "    if (window.__mediaSessionHandlers['nexttrack']) {\n" +
+      "      window.__mediaSessionHandlers['nexttrack']();\n" +
+      "    }\n" +
+      "  };\n" +
+      "  window.__nativePrev = function() {\n" +
+      "    if (window.__mediaSessionHandlers['previoustrack']) {\n" +
+      "      window.__mediaSessionHandlers['previoustrack']();\n" +
+      "    }\n" +
+      "  };\n" +
+      "  window.__nativeSeekTo = function(seconds) {\n" +
+      "    if (window.__mediaSessionHandlers['seekto']) {\n" +
+      "      window.__mediaSessionHandlers['seekto']({ seekTime: seconds });\n" +
+      "    } else if (window.__currentAudio) {\n" +
+      "      window.__currentAudio.currentTime = seconds;\n" +
+      "    }\n" +
+      "  };\n" +
+      "})();";
+
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.main);
+
+    // Request notification permission on Android 13+
+    if (Build.VERSION.SDK_INT >= 33) {
+      if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+        requestPermissions(new String[]{ Manifest.permission.POST_NOTIFICATIONS }, 102);
+      }
+    }
 
     // Start HTTP server as soon as app opens
     startHttpServer();
@@ -66,28 +238,25 @@ public class MainActivity extends Activity {
       @Override
       public void onReceive(Context context, Intent intent) {
         String action = intent.getStringExtra("action");
-        if (action != null) {
-          String jsCommand = "";
+        if (action != null && web != null) {
           switch (action) {
             case "play":
-              jsCommand = "document.querySelector('audio').play();";
+              web.evaluateJavascript("if (window.__nativePlay) { window.__nativePlay(); } else if (window.__currentAudio) { window.__currentAudio.play(); }", null);
               break;
             case "pause":
-              jsCommand = "document.querySelector('audio').pause();";
+              web.evaluateJavascript("if (window.__nativePause) { window.__nativePause(); } else if (window.__currentAudio) { window.__currentAudio.pause(); }", null);
               break;
             case "next":
-              jsCommand = "if(typeof nextTrack === 'function') { nextTrack(); } else { let nextButton = document.querySelector('.next-button'); if(nextButton) nextButton.click(); }";
+              web.evaluateJavascript("if (window.__nativeNext) { window.__nativeNext(); }", null);
               break;
             case "previous":
-              jsCommand = "if(typeof prevTrack === 'function') { prevTrack(); } else { let prevButton = document.querySelector('.prev-button'); if(prevButton) prevButton.click(); }";
+              web.evaluateJavascript("if (window.__nativePrev) { window.__nativePrev(); }", null);
               break;
             case "seekTo":
               long position = intent.getLongExtra("position", 0);
-              jsCommand = "document.querySelector('audio').currentTime = " + (position / 1000) + ";";
+              double sec = position / 1000.0;
+              web.evaluateJavascript("if (window.__nativeSeekTo) { window.__nativeSeekTo(" + sec + "); } else if (window.__currentAudio) { window.__currentAudio.currentTime = " + sec + "; }", null);
               break;
-          }
-          if (!jsCommand.isEmpty() && web != null) {
-            web.loadUrl("javascript:" + jsCommand);
           }
         }
       }
@@ -129,56 +298,17 @@ public class MainActivity extends Activity {
     web.setWebViewClient(new WebViewClient() {
       @Override
       public void onPageStarted(WebView p1, String p2, Bitmap p3) {
-        // Initialize audio controls for notification
-        p1.loadUrl("javascript:(function() { " +
-          "localStorage.setItem('bgplay', 'true'); " +
-          "if (typeof Android !== 'undefined') { Android.setBgPlay(true); } " +
-          // Setup audio tag event listeners for media controls
-          "document.addEventListener('DOMContentLoaded', function() { " +
-            "var audioElements = document.getElementsByTagName('audio'); " +
-            "if (audioElements.length > 0) { " +
-              "var audio = audioElements[0]; " +
-              "audio.addEventListener('play', function() { " +
-                "if (typeof Android !== 'undefined') { Android.bgPlay(audio.currentTime * 1000); } " +
-              "}); " +
-              "audio.addEventListener('pause', function() { " +
-                "if (typeof Android !== 'undefined') { Android.bgPause(audio.currentTime * 1000); } " +
-              "}); " +
-              "audio.addEventListener('loadedmetadata', function() { " +
-                "if (typeof Android !== 'undefined' && audio.src) { " +
-                  "var songTitle = document.querySelector('.song-title') ? document.querySelector('.song-title').textContent : document.title;" +
-                  "var artistName = document.querySelector('.artist-name') ? document.querySelector('.artist-name').textContent : 'Unknown Artist';" +
-                  "var albumArt = document.querySelector('.album-art') ? document.querySelector('.album-art').src : '';" +
-                  "Android.bgStart(albumArt, songTitle, artistName, audio.duration * 1000); " +
-                "} " +
-              "}); " +
-            "} " +
-          "}); " +
-        "})();");
-        
+        p1.evaluateJavascript(JS_MEDIA_SCRIPT, null);
         super.onPageStarted(p1, p2, p3);
       }
 
       @Override
       public void onPageFinished(WebView p1, String url) {
+        p1.evaluateJavascript(JS_MEDIA_SCRIPT, null);
+        p1.evaluateJavascript("if (window.trustedTypes && window.trustedTypes.createPolicy && !window.trustedTypes.defaultPolicy) {window.trustedTypes.createPolicy('default', {createHTML: (string) => string,createScriptURL: string => string, createScript: string => string, });}", null);
+        p1.evaluateJavascript("if (typeof Android !== 'undefined') { Android.setBgPlay(true); }", null);
 
-        web.loadUrl("javascript:if (window.trustedTypes && window.trustedTypes.createPolicy && !window.trustedTypes.defaultPolicy) {window.trustedTypes.createPolicy('default', {createHTML: (string) => string,createScriptURL: string => string, createScript: string => string, });}");
-        web.loadUrl("javascript:(function () { var script = document.createElement('script'); script.src='https://cdn.jsdelivr.net/npm/ytify'; document.body.appendChild(script);  })();");
-web.loadUrl("javascript:(function () { var script = document.createElement('script'); script.src='https://cdn.jsdelivr.net/npm/ytify/bgplay.js'; document.body.appendChild(script);  })();");
-web.loadUrl("javascript:(function () { var script = document.createElement('script');script.type='module';script.src='https://cdn.jsdelivr.net/npm/ytify/innertube.js'; document.body.appendChild(script);  })();");
-        web.loadUrl("javascript:(function() { if ('mediaSession' in navigator) { navigator.mediaSession.playbackState = 'playing'; } })();");
-        // Initialize media session controls by default
-        web.loadUrl("javascript:(function() { localStorage.setItem('bgplay', 'true'); if (typeof Android !== 'undefined') { Android.setBgPlay(true); } })();");
-
-        if (dl) {
-
-          //Will Patch this later
-
-          //web.loadUrl("javascript:(function () {window.location.hash='download';})();");
-          //dL=false;                
-        }
-
-        if (!url.contains("ytify.pp.ua/s") && !url.contains("ytify-native.netlify.app/s") && isPlaying) {
+        if (!url.contains("ytify.pp.ua") && !url.contains("ytify-native.netlify.app") && isPlaying) {
           isPlaying = false;
           stopService(new Intent(getApplicationContext(), ForegroundService.class));
         }
@@ -394,6 +524,30 @@ web.loadUrl("javascript:(function () { var script = document.createElement('scri
     }
 
     @JavascriptInterface
+    public void updateMedia(String title, String artist, String album, String artworkUrl, long duration, long position, String state) {
+      if (title == null || title.isEmpty() || "none".equals(state)) {
+        if ("none".equals(state)) {
+          bgStop();
+        }
+        return;
+      }
+      isPlaying = "playing".equals(state);
+      Intent intent = new Intent(getApplicationContext(), ForegroundService.class);
+      intent.putExtra("icon", artworkUrl != null ? artworkUrl : "");
+      intent.putExtra("title", title);
+      intent.putExtra("subtitle", artist != null ? artist : "");
+      intent.putExtra("album", album != null ? album : "");
+      intent.putExtra("duration", duration);
+      intent.putExtra("currentPosition", position);
+      intent.putExtra("action", isPlaying ? "play" : "pause");
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        startForegroundService(intent);
+      } else {
+        startService(intent);
+      }
+    }
+
+    @JavascriptInterface
     public void bgStart(String iconn, String titlen, String subtitlen, long dura) {
       icon = iconn;
       title = titlen;
@@ -411,7 +565,11 @@ web.loadUrl("javascript:(function () { var script = document.createElement('scri
       intent.putExtra("currentPosition", 0);
       intent.putExtra("action", "play");
 
-      startService(intent);
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        startForegroundService(intent);
+      } else {
+        startService(intent);
+      }
 
     }
 
@@ -515,22 +673,25 @@ web.loadUrl("javascript:(function () { var script = document.createElement('scri
 
         switch (action) {
         case "PLAY_ACTION":
-          web.loadUrl("javascript:playVideo();");
-          Log.e("play", "play called");
+          web.evaluateJavascript("if (window.__nativePlay) { window.__nativePlay(); } else if (window.__mediaSessionHandlers && window.__mediaSessionHandlers.play) { window.__mediaSessionHandlers.play(); } else if (window.__currentAudio) { window.__currentAudio.play(); }", null);
           break;
         case "PAUSE_ACTION":
-          web.loadUrl("javascript:pauseVideo();");
-          Log.e("pause", "pause called");
+          web.evaluateJavascript("if (window.__nativePause) { window.__nativePause(); } else if (window.__mediaSessionHandlers && window.__mediaSessionHandlers.pause) { window.__mediaSessionHandlers.pause(); } else if (window.__currentAudio) { window.__currentAudio.pause(); }", null);
           break;
         case "NEXT_ACTION":
-          web.loadUrl("javascript:playNext();");
+          web.evaluateJavascript("if (window.__nativeNext) { window.__nativeNext(); } else if (window.__mediaSessionHandlers && window.__mediaSessionHandlers.nexttrack) { window.__mediaSessionHandlers.nexttrack(); }", null);
           break;
         case "PREV_ACTION":
-          web.loadUrl("javascript:playPrev();");
+          web.evaluateJavascript("if (window.__nativePrev) { window.__nativePrev(); } else if (window.__mediaSessionHandlers && window.__mediaSessionHandlers.previoustrack) { window.__mediaSessionHandlers.previoustrack(); }", null);
           break;
         case "SEEKTO":
-          web.loadUrl("javascript:seekTo('" + intent.getExtras().getString("pos") + "');");
-
+          try {
+            long posMs = Long.parseLong(intent.getExtras().getString("pos"));
+            double posSec = posMs / 1000.0;
+            web.evaluateJavascript("if (window.__nativeSeekTo) { window.__nativeSeekTo(" + posSec + "); } else if (window.__mediaSessionHandlers && window.__mediaSessionHandlers.seekto) { window.__mediaSessionHandlers.seekto({ seekTime: " + posSec + " }); } else if (window.__currentAudio) { window.__currentAudio.currentTime = " + posSec + "; }", null);
+          } catch (Exception e) {
+            Log.e("MainActivity", "Error seeking: " + e.getMessage());
+          }
           break;
         }
 

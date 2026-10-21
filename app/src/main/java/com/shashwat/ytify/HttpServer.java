@@ -7,6 +7,10 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLDecoder;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -92,6 +96,10 @@ public class HttpServer extends NanoHTTPD {
             return response;
         }
 
+        if (uri != null && uri.startsWith("/proxy")) {
+            return handleProxyRequest(session, corsHeaders);
+        }
+
         String videoId = extractVideoId(uri);
         if (videoId != null && !videoId.isEmpty()) {
             return handleStreamsRequest(videoId, corsHeaders);
@@ -100,10 +108,83 @@ public class HttpServer extends NanoHTTPD {
         return createErrorResponse(Response.Status.NOT_FOUND, "Not Found", corsHeaders);
     }
 
+    private Response handleProxyRequest(IHTTPSession session, Map<String, String> corsHeaders) {
+        try {
+            Map<String, String> parms = session.getParms();
+            String targetUrl = parms.get("url");
+            if (targetUrl == null || targetUrl.trim().isEmpty()) {
+                String qs = session.getQueryParameterString();
+                if (qs != null && qs.contains("url=")) {
+                    int idx = qs.indexOf("url=");
+                    targetUrl = URLDecoder.decode(qs.substring(idx + 4), "UTF-8");
+                }
+            }
+            if (targetUrl == null || targetUrl.trim().isEmpty()) {
+                return createErrorResponse(Response.Status.BAD_REQUEST, "Missing url parameter", corsHeaders);
+            }
+
+            HttpURLConnection conn = (HttpURLConnection) new URL(targetUrl).openConnection();
+            conn.setRequestMethod(session.getMethod().name());
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(15000);
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14)");
+
+            String range = null;
+            Map<String, String> reqHeaders = session.getHeaders();
+            for (Map.Entry<String, String> e : reqHeaders.entrySet()) {
+                if ("range".equalsIgnoreCase(e.getKey())) {
+                    range = e.getValue();
+                    break;
+                }
+            }
+            if (range != null && !range.trim().isEmpty()) {
+                conn.setRequestProperty("Range", range.trim());
+            }
+
+            conn.connect();
+
+            int code = conn.getResponseCode();
+            Response.IStatus status;
+            if (code == 206) {
+                status = Response.Status.PARTIAL_CONTENT;
+            } else if (code >= 200 && code < 300) {
+                status = Response.Status.OK;
+            } else {
+                status = Response.Status.lookup(code);
+                if (status == null) status = Response.Status.INTERNAL_ERROR;
+            }
+
+            String contentType = conn.getContentType();
+            if (contentType == null || contentType.trim().isEmpty()) {
+                contentType = "audio/mp4";
+            }
+            long contentLength = conn.getContentLengthLong();
+            InputStream is = (code >= 200 && code < 400) ? conn.getInputStream() : conn.getErrorStream();
+
+            Response response = newFixedLengthResponse(status, contentType, is, contentLength);
+            addCorsHeaders(response, corsHeaders);
+            response.addHeader("Accept-Ranges", "bytes");
+
+            String contentRange = conn.getHeaderField("Content-Range");
+            if (contentRange != null && !contentRange.trim().isEmpty()) {
+                response.addHeader("Content-Range", contentRange.trim());
+            }
+
+            return response;
+        } catch (Exception e) {
+            Log.e(TAG, "Proxy error: " + e.getMessage(), e);
+            return createErrorResponse(Response.Status.INTERNAL_ERROR, "Proxy error: " + e.getMessage(), corsHeaders);
+        }
+    }
+
     private String extractVideoId(String uri) {
         if (uri == null) return null;
         if (uri.contains("?")) {
             uri = uri.substring(0, uri.indexOf("?"));
+        }
+        if (uri.startsWith("/proxy")) {
+            return null;
         }
         if (uri.startsWith("/streams/")) {
             String[] parts = uri.split("/");

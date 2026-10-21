@@ -132,14 +132,16 @@ public class MainActivity extends Activity {
       "                var has140 = data.adaptiveFormats.some(function(f) { return f.url && f.url.includes('itag=140'); });\n" +
       "                if (!has251 && data.adaptiveFormats[0]) {\n" +
       "                  var c251 = Object.assign({}, data.adaptiveFormats[0]);\n" +
-      "                  c251.url = c251.url + (c251.url.includes('?') ? '&itag=251' : '?itag=251');\n" +
+      "                  var origU251 = c251.url || '';\n" +
+      "                  c251.url = origU251.includes('/proxy?') ? origU251.replace(/itag=\\d+/, 'itag=251') : (LOCAL_URL + '/proxy?itag=251&url=' + encodeURIComponent(origU251));\n" +
       "                  c251.itag = 251;\n" +
       "                  c251.type = 'audio/webm; codecs=\"opus\"';\n" +
       "                  data.adaptiveFormats.push(c251);\n" +
       "                }\n" +
       "                if (!has140 && data.adaptiveFormats[0]) {\n" +
       "                  var c140 = Object.assign({}, data.adaptiveFormats[0]);\n" +
-      "                  c140.url = c140.url + (c140.url.includes('?') ? '&itag=140' : '?itag=140');\n" +
+      "                  var origU140 = c140.url || '';\n" +
+      "                  c140.url = origU140.includes('/proxy?') ? origU140.replace(/itag=\\d+/, 'itag=140') : (LOCAL_URL + '/proxy?itag=140&url=' + encodeURIComponent(origU140));\n" +
       "                  c140.itag = 140;\n" +
       "                  c140.type = 'audio/mp4; codecs=\"mp4a.40.2\"';\n" +
       "                  data.adaptiveFormats.push(c140);\n" +
@@ -182,14 +184,20 @@ public class MainActivity extends Activity {
       "  }\n" +
       "  function getVideoId() {\n" +
       "    try {\n" +
-      "      if (window.__currentVideoId) return window.__currentVideoId;\n" +
-      "      var titleEl = document.querySelector('.mediaDetails #title, #title, a[href*=\"watch?v=\"]');\n" +
+      "      var titleEl = document.querySelector('.mediaDetails #title, .miniplayer .mediaDetails #title, #title, a[href*=\"watch?v=\"]');\n" +
       "      if (titleEl && titleEl.href) {\n" +
       "        var match = titleEl.href.match(/[?&]v=([a-zA-Z0-9_-]{11})/);\n" +
-      "        if (match && match[1]) return match[1];\n" +
+      "        if (match && match[1]) {\n" +
+      "          window.__currentVideoId = match[1];\n" +
+      "          return match[1];\n" +
+      "        }\n" +
       "      }\n" +
       "      var m = window.location.href.match(/[?&]v=([a-zA-Z0-9_-]{11})/);\n" +
-      "      if (m && m[1]) return m[1];\n" +
+      "      if (m && m[1]) {\n" +
+      "        window.__currentVideoId = m[1];\n" +
+      "        return m[1];\n" +
+      "      }\n" +
+      "      if (window.__currentVideoId) return window.__currentVideoId;\n" +
       "    } catch (e) {}\n" +
       "    return '';\n" +
       "  }\n" +
@@ -217,12 +225,13 @@ public class MainActivity extends Activity {
       "      }\n" +
       "      var state = d.state === 'paused' ? 'paused' : 'playing';\n" +
       "      var artwork = d.artwork || '';\n" +
-      "      if (!artwork || artwork.startsWith('blob:')) {\n" +
+      "      if (!artwork || artwork.startsWith('blob:') || artwork.startsWith('data:')) {\n" +
       "        artwork = getFallbackArtwork();\n" +
       "      }\n" +
+      "      var artistClean = d.artist || getDomArtist() || '';\n" +
       "      Android.updateMedia(\n" +
       "        titleClean,\n" +
-      "        d.artist || '',\n" +
+      "        artistClean,\n" +
       "        d.album || '',\n" +
       "        artwork,\n" +
       "        Math.round(dur || 0),\n" +
@@ -242,37 +251,13 @@ public class MainActivity extends Activity {
       "    return '';\n" +
       "  }\n" +
       "  function applyArtwork(src) {\n" +
-      "    if (!src) {\n" +
-      "      var fb = getFallbackArtwork();\n" +
-      "      if (fb) {\n" +
-      "        window.__currentMediaData.artwork = fb;\n" +
-      "        sendToAndroid();\n" +
-      "      }\n" +
-      "      return;\n" +
-      "    }\n" +
-      "    if (src.startsWith('blob:')) {\n" +
-      "      var fb = getFallbackArtwork();\n" +
-      "      if (fb) {\n" +
-      "        window.__currentMediaData.artwork = fb;\n" +
-      "        sendToAndroid();\n" +
-      "      }\n" +
-      "      fetch(src)\n" +
-      "        .then(function(res) { return res.blob(); })\n" +
-      "        .then(function(blob) {\n" +
-      "          var reader = new FileReader();\n" +
-      "          reader.onloadend = function() {\n" +
-      "            if (reader.result && typeof reader.result === 'string' && reader.result.startsWith('data:')) {\n" +
-      "              window.__currentMediaData.artwork = reader.result;\n" +
-      "              sendToAndroid();\n" +
-      "            }\n" +
-      "          };\n" +
-      "          reader.readAsDataURL(blob);\n" +
-      "        })\n" +
-      "        .catch(function(e) {});\n" +
+      "    var fb = getFallbackArtwork();\n" +
+      "    if (!src || src.startsWith('blob:') || src.startsWith('data:')) {\n" +
+      "      window.__currentMediaData.artwork = fb;\n" +
       "    } else {\n" +
       "      window.__currentMediaData.artwork = src;\n" +
-      "      sendToAndroid();\n" +
       "    }\n" +
+      "    sendToAndroid();\n" +
       "  }\n" +
       "  function handleMetadataUpdate(meta) {\n" +
       "    if (!meta) return;\n" +
@@ -461,29 +446,30 @@ public class MainActivity extends Activity {
       "  }\n" +
       "  setInterval(function() {\n" +
       "    try {\n" +
-      "      if (navigator.mediaSession && navigator.mediaSession.metadata) {\n" +
+      "      var domTitleEl = document.querySelector('.mediaDetails #title, .miniplayer .mediaDetails #title');\n" +
+      "      var domTitle = domTitleEl ? cleanText(domTitleEl.innerText || domTitleEl.textContent || '') : '';\n" +
+      "      var domArtist = getDomArtist();\n" +
+      "      if (domTitle && (domTitle !== window.__lastSeenTitle || (domArtist && domArtist !== window.__lastSeenArtist))) {\n" +
+      "        window.__lastSeenTitle = domTitle;\n" +
+      "        window.__lastSeenArtist = domArtist;\n" +
+      "        getVideoId();\n" +
+      "        if (navigator.mediaSession && navigator.mediaSession.metadata && cleanText(navigator.mediaSession.metadata.title) === domTitle) {\n" +
+      "          handleMetadataUpdate(navigator.mediaSession.metadata);\n" +
+      "        } else {\n" +
+      "          window.__currentMediaData.title = domTitle;\n" +
+      "          window.__currentMediaData.artist = domArtist;\n" +
+      "          applyArtwork('');\n" +
+      "        }\n" +
+      "      } else if (navigator.mediaSession && navigator.mediaSession.metadata) {\n" +
       "        var m = navigator.mediaSession.metadata;\n" +
       "        var art = (m.artwork && m.artwork.length > 0) ? m.artwork[m.artwork.length - 1].src : '';\n" +
-      "        if (m.title !== window.__lastSeenTitle || m.artist !== window.__lastSeenArtist || art !== window.__lastSeenArtwork) {\n" +
+      "        if (m.title !== window.__lastSeenTitle || m.artist !== window.__lastSeenArtist) {\n" +
       "          window.__lastSeenTitle = m.title;\n" +
       "          window.__lastSeenArtist = m.artist;\n" +
-      "          window.__lastSeenArtwork = art;\n" +
       "          handleMetadataUpdate(m);\n" +
       "        }\n" +
       "      } else {\n" +
       "        checkFallbackMetadata();\n" +
-      "      }\n" +
-      "      var da = getDomArtist();\n" +
-      "      if (da && !window.__currentMediaData.artist) {\n" +
-      "        window.__currentMediaData.artist = da;\n" +
-      "        sendToAndroid();\n" +
-      "      }\n" +
-      "      if (!window.__currentMediaData.artwork || window.__currentMediaData.artwork.startsWith('blob:')) {\n" +
-      "        var fb = getFallbackArtwork();\n" +
-      "        if (fb && window.__currentMediaData.artwork !== fb) {\n" +
-      "          window.__currentMediaData.artwork = fb;\n" +
-      "          sendToAndroid();\n" +
-      "        }\n" +
       "      }\n" +
       "      if (window.__currentAudio) {\n" +
       "        if (!window.__currentAudio.paused && window.__currentMediaData.state !== 'playing') {\n" +
@@ -492,7 +478,7 @@ public class MainActivity extends Activity {
       "        }\n" +
       "      }\n" +
       "    } catch (e) {}\n" +
-      "  }, 500);\n" +
+      "  }, 800);\n" +
       "  window.__nativePlay = function() {\n" +
       "    if (window.__mediaSessionHandlers['play']) {\n" +
       "      try { window.__mediaSessionHandlers['play'](); return; } catch (e) {}\n" +
@@ -537,6 +523,7 @@ public class MainActivity extends Activity {
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.main);
+    WebView.setWebContentsDebuggingEnabled(true);
 
     // Request notification permission on Android 13+
     if (Build.VERSION.SDK_INT >= 33) {

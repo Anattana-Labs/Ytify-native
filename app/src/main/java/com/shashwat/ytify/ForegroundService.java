@@ -357,6 +357,9 @@ public class ForegroundService extends Service {
 
         Notification notification = builder.build();
         startForeground(NOTIFICATION_ID, notification);
+        if (notificationManager != null) {
+            notificationManager.notify(NOTIFICATION_ID, notification);
+        }
     }
 
     private void updateMediaSessionMetadata(String title, String artist, String album, Bitmap albumArt, long duration) {

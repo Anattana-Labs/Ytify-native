@@ -373,8 +373,8 @@ public class PlaybackResolver {
                 String directSaavn = resolveDirectStreamUrl(worker.saavnStreamUrl, 3);
                 if (directSaavn != null) {
                     JSONObject format = new JSONObject();
-                    String taggedSaavn = directSaavn + (directSaavn.contains("?") ? "&itag=140&fallback=1" : "?itag=140&fallback=1");
-                    format.put("url", taggedSaavn);
+                    String proxiedSaavn = "http://127.0.0.1:9999/proxy?itag=140&url=" + java.net.URLEncoder.encode(directSaavn, "UTF-8");
+                    format.put("url", proxiedSaavn);
                     format.put("type", "audio/mp4; codecs=\"mp4a.40.2\"");
                     format.put("mimeType", "audio/mp4; codecs=\"mp4a.40.2\"");
                     format.put("itag", 140);
@@ -388,8 +388,8 @@ public class PlaybackResolver {
 
                     try {
                         JSONObject opusFormat = new JSONObject(format.toString());
-                        String opusTaggedSaavn = directSaavn + (directSaavn.contains("?") ? "&itag=251&fallback=1" : "?itag=251&fallback=1");
-                        opusFormat.put("url", opusTaggedSaavn);
+                        String opusProxiedSaavn = "http://127.0.0.1:9999/proxy?itag=251&url=" + java.net.URLEncoder.encode(directSaavn, "UTF-8");
+                        opusFormat.put("url", opusProxiedSaavn);
                         opusFormat.put("type", "audio/webm; codecs=\"opus\"");
                         opusFormat.put("mimeType", "audio/webm; codecs=\"opus\"");
                         opusFormat.put("itag", 251);
@@ -412,8 +412,8 @@ public class PlaybackResolver {
                     String directCasquad = resolveDirectStreamUrl(casquad.url, 3);
                     if (directCasquad != null) {
                         JSONObject format = new JSONObject();
-                        String taggedCasquad = directCasquad + (directCasquad.contains("?") ? "&itag=140&fallback=1" : "?itag=140&fallback=1");
-                        format.put("url", taggedCasquad);
+                        String proxiedCasquad = "http://127.0.0.1:9999/proxy?itag=140&url=" + java.net.URLEncoder.encode(directCasquad, "UTF-8");
+                        format.put("url", proxiedCasquad);
                         format.put("type", "audio/mp4; codecs=\"mp4a.40.2\"");
                         format.put("mimeType", "audio/mp4; codecs=\"mp4a.40.2\"");
                         format.put("itag", 140);
@@ -427,8 +427,8 @@ public class PlaybackResolver {
 
                         try {
                             JSONObject opusCasquad = new JSONObject(format.toString());
-                            String opusTaggedCasquad = directCasquad + (directCasquad.contains("?") ? "&itag=251&fallback=1" : "?itag=251&fallback=1");
-                            opusCasquad.put("url", opusTaggedCasquad);
+                            String opusProxiedCasquad = "http://127.0.0.1:9999/proxy?itag=251&url=" + java.net.URLEncoder.encode(directCasquad, "UTF-8");
+                            opusCasquad.put("url", opusProxiedCasquad);
                             opusCasquad.put("type", "audio/webm; codecs=\"opus\"");
                             opusCasquad.put("mimeType", "audio/webm; codecs=\"opus\"");
                             opusCasquad.put("itag", 251);
@@ -488,9 +488,6 @@ public class PlaybackResolver {
                                         if (!taggedUrl.contains("itag=")) {
                                             taggedUrl = taggedUrl + (taggedUrl.contains("?") ? "&itag=" + itagVal : "?itag=" + itagVal);
                                         }
-                                        if (!taggedUrl.contains("fallback=")) {
-                                            taggedUrl = taggedUrl + (taggedUrl.contains("?") ? "&fallback=1" : "?fallback=1");
-                                        }
                                         cleanFormat.put("url", taggedUrl);
                                         adaptiveFormats.put(cleanFormat);
                                         addedCount++;
@@ -523,7 +520,7 @@ public class PlaybackResolver {
         result.put("recommendedVideos", new JSONArray());
         result.put("captions", new JSONArray());
         result.put("liveNow", false);
-        result.put("proxy", "");
+        result.put("proxy", "http://127.0.0.1:9999");
 
         JSONObject streamingData = new JSONObject();
         streamingData.put("adaptiveFormats", adaptiveFormats);

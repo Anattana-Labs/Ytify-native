@@ -2,102 +2,209 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Android%205.0%2B-green.svg)](https://developer.android.com)
-[![APK Size](https://img.shields.io/badge/APK%20Size-~200%20KB-brightgreen.svg)](https://github.com)
+[![APK Size](https://img.shields.io/badge/APK%20Size-~218%20KB-brightgreen.svg)](https://github.com/Anattana-Labs/Ytify-native/releases)
+[![GitHub Repo](https://img.shields.io/badge/GitHub-Anattana--Labs%2FYtify--native-181717.svg?logo=github)](https://github.com/Anattana-Labs/Ytify-native)
 
-**Ytify-native** is an ultra-lightweight, high-performance native Android wrapper for [Ytify](https://ytify.pp.ua) with an embedded, on-device YouTube InnerTube stream extraction engine.
+**Ytify-native** is an ultra-lightweight, high-performance native Android application for [Ytify](https://ytify.pp.ua) with an embedded, on-device YouTube InnerTube extraction engine and low-latency chunk-streaming proxy.
 
----
-
-## ✨ Features
-
-- **⚡ Ultra Lightweight**: Minimal APK footprint (~200 KB) with zero heavy third-party scrapers or bloated native dependencies.
-- **🛡️ Pure On-Device Extraction**: Embedded local HTTP server running on `127.0.0.1:9999` resolving direct unciphered YouTube audio & video formats via InnerTube clients (`VISIONOS`, `ANDROID_VR`, `TVHTML5`).
-- **🚀 Zero Media Proxying**: Direct `googlevideo.com` signed URLs for maximum throughput, low latency, and instant seeking.
-- **🤖 Bot-Bypass Bootstrapping**: Automated `visitorData` session context generation prevents "Sign in to confirm you're not a bot" playback errors.
-- **💉 Transparent Stream Interception**: Automatically intercepts web media queries in WebView and prioritizes your local engine before falling back to remote instances.
-- **🎧 Full Background & Lockscreen Playback**: Native Android Foreground Service and `MediaSession` bridge with album art, metadata, track seeking, and notification controls.
-- **🖤 Sleek Monochrome Onboarding**: Minimalist Apple Music-inspired first-launch onboarding screen with official Ytify branding.
-- **🖼️ Picture-in-Picture (PiP)**: Native PiP support for video streaming.
-- **🔒 Privacy First**: 100% on-device processing. No external tracking, ads, or middleman proxies.
+It achieves instant, background audio/video playback and lockscreen media session control with a minimal **~218 KB** APK footprint — containing **zero third-party scrapers, zero remote bucket/worker dependencies, and zero telemetry**.
 
 ---
 
-## 🏗️ Architecture & How It Works
+## ⚡ Key Highlights
+
+- **🪶 Tiny Footprint (~218 KB APK)**: Built strictly with native Android components and an embedded micro-HTTP server. No bulky frameworks or heavy scraping libraries.
+- **🛡️ 100% Local InnerTube Extraction**: Extracts direct, unciphered YouTube audio (`itag 140`, `itag 251`, `itag 249`) and video streams (`itag 18`, `itag 313`, `itag 137`, etc.) directly on device via InnerTube clients (`ANDROID_VR`, `VISIONOS`, `TVHTML5`).
+- **🔄 Smart Chunk-Streaming Proxy (`MultiChunkInputStream`)**: Bridges YouTube Google Video CDN range limitations (handling 256 KB bounded chunks) seamlessly to provide continuous playback without `HTTP 403 Forbidden` interruptions.
+- **🌐 Chromium Private Network Access (PNA) Support**: Fully compliant with modern Chromium Private Network Access policies (`Access-Control-Allow-Private-Network: true`), allowing seamless communication between public origins (`ytify.pp.ua`) and loopback (`127.0.0.1:9999`).
+- **🤖 Dynamic `visitorData` Bootstrapping**: Automates YouTube visitor session context acquisition to prevent bot challenges and ensure stream playability.
+- **🎧 Native Android Background & Lockscreen Playback**: Bridges web audio events directly into Android's native `MediaSessionCompat` and foreground notification service with dynamic artwork, scrubber sync, and hardware/Bluetooth controls.
+- **🖤 Minimalist Monochrome Onboarding**: First-run tutorial explaining app architecture and operation in a clean, high-contrast, theme-adaptive interface.
+- **🖼️ Picture-in-Picture (PiP)**: Native picture-in-picture window support for videos.
+- **🔒 Privacy First**: All extraction and stream proxying happen strictly within the local device loopback. No middleman servers or user data logging.
+
+---
+
+## 🏗️ Architecture & Data Flow
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Android Application                     │
-│                                                             │
-│  ┌──────────────────────┐         ┌──────────────────────┐  │
-│  │   VeltrixWebview     │         │   Local HTTP Server  │  │
-│  │  (ytify.pp.ua UI)    │         │     (Port 9999)      │  │
-│  └──────────┬───────────┘         └──────────┬───────────┘  │
-│             │                                │              │
-│       Fetch Interceptor                PlaybackResolver     │
-│    (Routes /api/v1/videos)                   │              │
-│             │                                │              │
-│             ▼                                ▼              │
-│  Localhost Request ────────────────► Pure YouTube InnerTube │
-│  (http://127.0.0.1:9999)             (VisitorData + Clients)│
-│                                              │              │
-│  ◄──────────────── Direct googlevideo URL ───┘              │
-│                                                             │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │     Native MediaSession & Android ForegroundService   │  │
-│  │     (Notification Controls, Seek, Lockscreen Art)     │  │
-│  └───────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Android Application Process                      │
+│                                                                         │
+│  ┌───────────────────────────┐           ┌───────────────────────────┐  │
+│  │      VeltrixWebview       │           │     Local HTTP Server     │  │
+│  │   (https://ytify.pp.ua)   │           │     (127.0.0.1:9999)      │  │
+│  └─────────────┬─────────────┘           └─────────────┬─────────────┘  │
+│                │                                       │                │
+│       Fetch Interceptor                          NanoHTTPD &            │
+│   (Traps /api/v1/videos/{id})                 MultiChunkProxy           │
+│                │                                       │                │
+│                ▼                                       ▼                │
+│       Routes to 127.0.0.1:9999           ┌───────────────────────────┐  │
+│                │                         │     PlaybackResolver      │  │
+│                │                         │   (Multi-Client InnerTube)│  │
+│                │                         └─────────────┬─────────────┘  │
+│                │                                       │                │
+│                │                                       ▼                │
+│                │                             Pure YouTube InnerTube     │
+│                │                                 Endpoint Query         │
+│                │                                       │                │
+│                ▼                                       ▼                │
+│  Stream URLs: 127.0.0.1:9999/proxy  ◄──────── Unciphered Stream Formats │
+│                │                                                        │
+│                ▼                                                        │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │              Native Android MediaSession & ForegroundService      │  │
+│  │       (Lockscreen Controls, Notification Player, Track Seeking)   │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-1. **Web Interface**: Loads the responsive SolidJS-based Ytify interface from `ytify.pp.ua`.
-2. **Stream Interception**: A custom JS script injected on page load hooks `window.fetch` to intercept media stream resolution requests for YouTube video IDs.
-3. **Localhost Engine**: Requests are routed to `http://127.0.0.1:9999/api/v1/videos/{videoId}`, where `PlaybackResolver` extracts high-bitrate unciphered audio (`itag 140`, `itag 251`, etc.) directly from YouTube.
-4. **Native Media Bridge**: Bridges HTML5 media events into Android's native `MediaSessionCompat` and `NotificationManager` for background playback and lockscreen controls.
+### Core Execution Pipeline
+
+1. **WebView Injection**: On page start, `MainActivity` injects `JS_STREAM_INTERCEPTOR` into the WebView context.
+2. **Media Interception**: When Ytify attempts to resolve tracks via `/api/v1/videos/{id}` or `/s/{id}`, the fetch interceptor redirects the query to `http://127.0.0.1:9999/api/v1/videos/{id}`.
+3. **InnerTube Resolution**: `PlaybackResolver` queries YouTube's `youtubei/v1/player` endpoint using unciphered client payloads (`ANDROID_VR` 1.65.10, `VISIONOS`, `TVHTML5`) combined with dynamic `visitorData` acquired from `youtubei/v1/visitor_id`.
+4. **Stream Proxying**: Format URLs are returned as `http://127.0.0.1:9999/proxy?itag={itag}&url={encoded_googlevideo_url}`.
+5. **Bounded Chunk Delivery**: When the HTML5 audio/video element requests media, `HttpServer` uses `MultiChunkInputStream` to request bounded chunks (<= 256 KB) from Google Video CDN, preventing `HTTP 403 Forbidden` range errors and assembling a smooth, continuous byte stream.
+6. **Native Media Session Bridge**: `JS_MEDIA_SCRIPT` listens to `navigator.mediaSession` updates and `<audio>` lifecycle events, bridging track title, artist, duration, position, and artwork into Android's native `ForegroundService` and `MediaSessionCompat`.
 
 ---
 
-## 🚀 Building & Installing
+## 📁 Repository Structure
+
+```
+.
+├── app/
+│   ├── build.gradle                       # Android build configuration & dependencies
+│   ├── proguard-rules.pro                 # Proguard optimization rules
+│   └── src/main/
+│       ├── AndroidManifest.xml            # Permissions, Service & Activity declarations
+│       ├── java/com/shashwat/ytify/
+│       │   ├── MainActivity.java          # Core Activity, WebView setup & JS interfaces
+│       │   ├── HttpServer.java            # NanoHTTPD proxy & MultiChunk streaming engine
+│       │   ├── PlaybackResolver.java      # Pure InnerTube client resolution pipeline
+│       │   ├── InnerTube.java             # Direct InnerTube connection primitives
+│       │   ├── ForegroundService.java     # Android media notification & background service
+│       │   ├── VeltrixWebview.java        # Custom WebView preserving background state
+│       │   ├── WebAppInterface.java       # Javascript-to-Java interface bridge
+│       │   ├── CustomWebClient.java       # Fullscreen and video chrome handler
+│       │   └── ...
+│       └── res/                           # Layouts, icons, and theme definitions
+├── gradle/wrapper/                        # Gradle wrapper binaries & configuration
+├── README.md                              # Project documentation
+├── build.gradle                           # Top-level Gradle configuration
+└── settings.gradle                        # Project settings & module inclusions
+```
+
+---
+
+## 🛠️ Building from Source
 
 ### Prerequisites
 
-- **Android SDK** with build-tools (API 33+)
-- **JDK 11** or higher
-- **Gradle** (or use the included `./gradlew` wrapper)
+- **Android SDK** (API Level 33+)
+- **JDK 11** or **JDK 17**
+- **Git**
 
-### Build APK
+### 1. Clone the Repository
 
 ```bash
-# Clone the repository
-git clone https://github.com/shashwat/Ytify-native.git
+git clone https://github.com/Anattana-Labs/Ytify-native.git
 cd Ytify-native
+```
 
+### 2. Build Release APK
+
+```bash
 # Build release APK
 ./gradlew assembleRelease
 ```
 
-The resulting APK will be located at:
+The compiled APK will be generated at:
 ```
 app/build/outputs/apk/release/app-release.apk
 ```
 
-### Install on Device via ADB
+### 3. Build Debug APK
 
 ```bash
-# Check connected device
-adb devices
+# Build debug APK
+./gradlew assembleDebug
+```
 
-# Install APK
-adb install -r app/build/outputs/apk/release/app-release.apk
+Output:
+```
+app/build/outputs/apk/debug/app-debug.apk
 ```
 
 ---
 
-## 🛠️ Configuration & Permissions
+## 📲 Installation via ADB
 
-- `POST_NOTIFICATIONS` (Android 13+): For media playback notifications.
-- `FOREGROUND_SERVICE`: For uninterrupted background audio playback.
-- `INTERNET`: For streaming audio and loading the web interface.
-- `WAKE_LOCK`: To maintain audio playback when the screen is locked.
+Connect your Android device with USB Debugging enabled, then run:
+
+```bash
+# Verify device connection
+adb devices
+
+# Install the APK
+adb install -r app/build/outputs/apk/release/app-release.apk
+
+# Launch the app
+adb shell am start -n com.shashwat.ytifynative/com.shashwat.ytify.MainActivity
+```
+
+---
+
+## 🔍 Development & Debugging
+
+### Port Forwarding
+
+To inspect or interact directly with the embedded HTTP server running on your phone from your development computer:
+
+```bash
+# Forward port 9999 from device to local machine
+adb forward tcp:9999 tcp:9999
+
+# Test server health
+curl -i http://127.0.0.1:9999/
+
+# Test stream extraction for any YouTube video ID
+curl -s http://127.0.0.1:9999/api/v1/videos/xvT1jH8B9AM | jq .
+```
+
+### Real-Time Log Monitoring
+
+```bash
+# Filter app-specific tags
+adb logcat -s YtifyHttpServer PlaybackResolver MainActivity
+```
+
+---
+
+## 🔒 Permissions & Security
+
+| Permission | Purpose |
+| :--- | :--- |
+| `INTERNET` | Loading the Ytify web interface and fetching YouTube stream chunks |
+| `FOREGROUND_SERVICE` | Keeping audio playback active when the screen is turned off or app is minimized |
+| `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | Android 14+ media playback foreground service compliance |
+| `POST_NOTIFICATIONS` | Android 13+ permission for lockscreen & notification media playback controls |
+| `MODIFY_AUDIO_SETTINGS` | Audio focus management and volume adjustments |
+| `WAKE_LOCK` | Preventing CPU sleep during active audio playback |
+
+---
+
+## 🤝 Contributing
+
+Contributions, bug reports, and pull requests are welcome!
+
+1. Fork the repository: [https://github.com/Anattana-Labs/Ytify-native](https://github.com/Anattana-Labs/Ytify-native)
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ---
 

@@ -162,6 +162,45 @@ public class MainActivity extends Activity {
     });
   }
 
+  public void showOnboardingOverlay() {
+    runOnUiThread(new Runnable() {
+      @Override
+      public void run() {
+        try {
+          final ViewGroup root = findViewById(android.R.id.content);
+          if (root == null) return;
+          View existing = root.findViewWithTag("onboarding_overlay");
+          if (existing != null) return;
+
+          final View onboardingView = getLayoutInflater().inflate(R.layout.onboarding_view, root, false);
+          onboardingView.setTag("onboarding_overlay");
+          Button btnContinue = onboardingView.findViewById(R.id.btn_continue);
+          btnContinue.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+              SharedPreferences prefs = getSharedPreferences("ytify", MODE_PRIVATE);
+              prefs.edit().putBoolean("onboarding_completed", true).apply();
+              onboardingView.animate()
+                  .alpha(0f)
+                  .translationY(30f)
+                  .setDuration(240)
+                  .withEndAction(new Runnable() {
+                    @Override
+                    public void run() {
+                      root.removeView(onboardingView);
+                    }
+                  })
+                  .start();
+            }
+          });
+          root.addView(onboardingView);
+        } catch (Exception e) {
+          Log.e("MainActivity", "Error showing onboarding: " + e.getMessage(), e);
+        }
+      }
+    });
+  }
+
   // Start HTTP server
   private void startHttpServer() {
     try {
@@ -654,6 +693,10 @@ public class MainActivity extends Activity {
 
     load(false);
 
+    if (!prefs.getBoolean("onboarding_completed", false)) {
+      showOnboardingOverlay();
+    }
+
     MainActivity.this.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
   }
 
@@ -872,6 +915,11 @@ public class MainActivity extends Activity {
     @JavascriptInterface
     public void onLocalServerUsed() {
       showNativeLocalServerUsed();
+    }
+
+    @JavascriptInterface
+    public void showOnboarding() {
+      showOnboardingOverlay();
     }
 
     @JavascriptInterface

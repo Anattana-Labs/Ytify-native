@@ -53,14 +53,20 @@ public class HttpServer extends NanoHTTPD {
     public Response serve(IHTTPSession session) {
         Map<String, String> corsHeaders = new HashMap<>();
         corsHeaders.put("Access-Control-Allow-Origin", "*");
-        corsHeaders.put("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        corsHeaders.put("Access-Control-Allow-Headers", "Content-Type, X-Requested-With");
+        corsHeaders.put("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD");
+        corsHeaders.put("Access-Control-Allow-Headers", "*");
+        corsHeaders.put("Access-Control-Max-Age", "86400");
 
         if (session.getMethod() == Method.OPTIONS) {
-            return newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "");
+            Response response = newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "");
+            addCorsHeaders(response, corsHeaders);
+            return response;
         }
 
         String uri = session.getUri();
+        if (uri != null && uri.contains("?")) {
+            uri = uri.substring(0, uri.indexOf("?"));
+        }
         Log.i(TAG, "Request received: " + uri);
 
         if ("/".equals(uri)) {
@@ -76,6 +82,16 @@ public class HttpServer extends NanoHTTPD {
             return response;
         }
 
+        if ("/s/".equals(uri) || "/s".equals(uri)) {
+            JSONObject sessionJson = new JSONObject();
+            try {
+                sessionJson.put("sessionId", "ytify_local_session");
+            } catch (JSONException ignored) {}
+            Response response = newFixedLengthResponse(Response.Status.OK, "application/json", sessionJson.toString());
+            addCorsHeaders(response, corsHeaders);
+            return response;
+        }
+
         String videoId = extractVideoId(uri);
         if (videoId != null && !videoId.isEmpty()) {
             return handleStreamsRequest(videoId, corsHeaders);
@@ -85,6 +101,10 @@ public class HttpServer extends NanoHTTPD {
     }
 
     private String extractVideoId(String uri) {
+        if (uri == null) return null;
+        if (uri.contains("?")) {
+            uri = uri.substring(0, uri.indexOf("?"));
+        }
         if (uri.startsWith("/streams/")) {
             String[] parts = uri.split("/");
             return parts.length >= 3 ? parts[2] : null;

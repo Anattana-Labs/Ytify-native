@@ -32,19 +32,65 @@ public class MainActivity extends Activity {
   private boolean dL = false;
 
   private VeltrixWebview web;
+  private HttpServer httpServer;
 
   // Start HTTP server
   private void startHttpServer() {
     try {
-      HttpServer server = new HttpServer();
-      if (!server.isRunning()) {
-        server.start();
-        Log.i("MainActivity", "HTTP Server started on port " + server.getPort());
+      if (httpServer == null) {
+        httpServer = new HttpServer();
+      }
+      if (!httpServer.isRunning()) {
+        httpServer.start();
+        Log.i("MainActivity", "HTTP Server started on port " + httpServer.getPort());
       }
     } catch (Exception e) {
       Log.e("MainActivity", "Error starting HTTP server: " + e.getMessage(), e);
     }
   }
+
+  private static final String JS_STREAM_INTERCEPTOR =
+      "(function() {\n" +
+      "  if (window.__ytify_fetch_interceptor_installed) return;\n" +
+      "  window.__ytify_fetch_interceptor_installed = true;\n" +
+      "  var LOCAL_PORT = 9999;\n" +
+      "  var LOCAL_URL = 'http://127.0.0.1:' + LOCAL_PORT;\n" +
+      "  var origFetch = window.fetch;\n" +
+      "  window.fetch = async function(resource, init) {\n" +
+      "    try {\n" +
+      "      var urlStr = '';\n" +
+      "      if (typeof resource === 'string') {\n" +
+      "        urlStr = resource;\n" +
+      "      } else if (resource && resource.url) {\n" +
+      "        urlStr = resource.url;\n" +
+      "      }\n" +
+      "      var match = urlStr.match(/(?:\\/api\\/v1\\/videos\\/|\\/s\\/)([a-zA-Z0-9_-]{11})(?:[/?#]|$)/);\n" +
+      "      if (match && match[1] && !urlStr.includes(':' + LOCAL_PORT)) {\n" +
+      "        var videoId = match[1];\n" +
+      "        console.log('[YtifyNative] Intercepted stream request for videoId:', videoId);\n" +
+      "        try {\n" +
+      "          var localReqUrl = LOCAL_URL + '/api/v1/videos/' + videoId;\n" +
+      "          var localRes = await origFetch(localReqUrl, {\n" +
+      "            method: 'GET',\n" +
+      "            headers: { 'Accept': 'application/json' },\n" +
+      "            signal: init && init.signal ? init.signal : undefined\n" +
+      "          });\n" +
+      "          if (localRes && localRes.ok) {\n" +
+      "            console.log('[YtifyNative] Successfully resolved stream from localhost:9999 for:', videoId);\n" +
+      "            return localRes;\n" +
+      "          }\n" +
+      "          console.warn('[YtifyNative] Localhost:9999 returned status ' + (localRes ? localRes.status : 'null') + ', falling back to remote...');\n" +
+      "        } catch (localErr) {\n" +
+      "          console.warn('[YtifyNative] Localhost:9999 failed:', localErr, ', falling back to remote...');\n" +
+      "        }\n" +
+      "      }\n" +
+      "    } catch (e) {\n" +
+      "      console.error('[YtifyNative] Error in fetch interceptor:', e);\n" +
+      "    }\n" +
+      "    return origFetch.apply(this, arguments);\n" +
+      "  };\n" +
+      "  console.log('[YtifyNative] Stream interceptor installed: primary=localhost:9999');\n" +
+      "})();\n";
 
   private static final String JS_MEDIA_SCRIPT =
       "(function() {\n" +
@@ -476,6 +522,37 @@ public class MainActivity extends Activity {
     web.getSettings().setSupportZoom(true);
     web.getSettings().setBuiltInZoomControls(true);
     web.getSettings().setDisplayZoomControls(false);
+    web.getSettings().setDomStorageEnabled(true);
+    web.getSettings().setDatabaseEnabled(true);
+    web.getSettings().setMediaPlaybackRequiresUserGesture(false); // Allow autoplay
+    web.getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+    web.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+    web.addJavascriptInterface(new WebAppInterface(this), "Android");
+    web.setWebChromeClient(new CustomWebClient());
+
+    web.setWebViewClient(new WebViewClient() {
+      @Override
+      public void onPageStarted(WebView p1, String p2, Bitmap p3) {
+        p1.evaluateJavascript(JS_STREAM_INTERCEPTOR, null);
+        p1.evaluateJavascript(JS_MEDIA_SCRIPT, null);
+        super.onPageStarted(p1, p2, p3);
+      }
+
+      @Override
+      public void onPageFinished(WebView p1, String url) {
+        p1.evaluateJavascript(JS_STREAM_INTERCEPTOR, null);
+        p1.evaluateJavascript(JS_MEDIA_SCRIPT, null);
+        p1.evaluateJavascript("if (window.trustedTypes && window.trustedTypes.createPolicy && !window.trustedTypes.defaultPolicy) {window.trustedTypes.createPolicy('default', {createHTML: (string) => string,createScriptURL: string => string, createScript: string => string, });}", null);
+        p1.evaluateJavascript("if (typeof Android !== 'undefined') { Android.setBgPlay(true); }", null);
+
+        if (!url.contains("ytify.pp.ua") && !url.contains("ytify-native.netlify.app") && isPlaying) {
+          isPlaying = false;
+          stopService(new Intent(getApplicationContext(), ForegroundService.class));
+        }
+
+        super.onPageFinished(p1, url);
+      }
+    });
 
     Intent intent = getIntent();
     String action = intent.getAction();
@@ -490,34 +567,6 @@ public class MainActivity extends Activity {
       }
     }
     web.loadUrl(url);
-    web.getSettings().setDomStorageEnabled(true);
-    web.getSettings().setDatabaseEnabled(true);
-    web.addJavascriptInterface(new WebAppInterface(this), "Android");
-    web.setWebChromeClient(new CustomWebClient());
-    web.getSettings().setMediaPlaybackRequiresUserGesture(false); // Allow autoplay
-    web.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-
-    web.setWebViewClient(new WebViewClient() {
-      @Override
-      public void onPageStarted(WebView p1, String p2, Bitmap p3) {
-        p1.evaluateJavascript(JS_MEDIA_SCRIPT, null);
-        super.onPageStarted(p1, p2, p3);
-      }
-
-      @Override
-      public void onPageFinished(WebView p1, String url) {
-        p1.evaluateJavascript(JS_MEDIA_SCRIPT, null);
-        p1.evaluateJavascript("if (window.trustedTypes && window.trustedTypes.createPolicy && !window.trustedTypes.defaultPolicy) {window.trustedTypes.createPolicy('default', {createHTML: (string) => string,createScriptURL: string => string, createScript: string => string, });}", null);
-        p1.evaluateJavascript("if (typeof Android !== 'undefined') { Android.setBgPlay(true); }", null);
-
-        if (!url.contains("ytify.pp.ua") && !url.contains("ytify-native.netlify.app") && isPlaying) {
-          isPlaying = false;
-          stopService(new Intent(getApplicationContext(), ForegroundService.class));
-        }
-
-        super.onPageFinished(p1, url);
-      }
-    });
 
     setReceiver();
   }
@@ -914,9 +963,12 @@ public class MainActivity extends Activity {
   public void onDestroy() {
     super.onDestroy();
 
-      Intent intent = new Intent(getApplicationContext(), ForegroundService.class);
+    if (httpServer != null && httpServer.isRunning()) {
+      httpServer.stop();
+    }
 
-      stopService(intent);
+    Intent intent = new Intent(getApplicationContext(), ForegroundService.class);
+    stopService(intent);
 
     unregisterReceiver(broadcastReceiver);
   }

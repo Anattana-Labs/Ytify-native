@@ -4,6 +4,7 @@ import android.text.TextUtils;
 import android.util.Log;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -372,13 +373,17 @@ public class PlaybackResolver {
                 String directSaavn = resolveDirectStreamUrl(worker.saavnStreamUrl, 3);
                 if (directSaavn != null) {
                     JSONObject format = new JSONObject();
-                    format.put("url", directSaavn);
+                    String taggedSaavn = directSaavn + (directSaavn.contains("?") ? "&fallback=1" : "?fallback=1");
+                    format.put("url", taggedSaavn);
                     format.put("type", "audio/mp4; codecs=\"mp4a.40.2\"");
                     format.put("mimeType", "audio/mp4; codecs=\"mp4a.40.2\"");
                     format.put("itag", 140);
-                    format.put("bitrate", 320000);
+                    format.put("bitrate", "320000");
                     format.put("quality", "AUDIO_QUALITY_HIGH");
                     format.put("audioQuality", "AUDIO_QUALITY_HIGH");
+                    format.put("encoding", "m4a");
+                    format.put("clen", "");
+                    format.put("resolution", "");
                     adaptiveFormats.put(format);
                     Log.i(TAG, "Added Worker Saavn 320kbps m4a stream for " + videoId);
                 }
@@ -395,13 +400,17 @@ public class PlaybackResolver {
                     String directCasquad = resolveDirectStreamUrl(casquad.url, 3);
                     if (directCasquad != null) {
                         JSONObject format = new JSONObject();
-                        format.put("url", directCasquad);
+                        String taggedCasquad = directCasquad + (directCasquad.contains("?") ? "&fallback=1" : "?fallback=1");
+                        format.put("url", taggedCasquad);
                         format.put("type", "audio/mp4; codecs=\"mp4a.40.2\"");
                         format.put("mimeType", "audio/mp4; codecs=\"mp4a.40.2\"");
                         format.put("itag", 140);
-                        format.put("bitrate", 320000);
+                        format.put("bitrate", "320000");
                         format.put("quality", "AUDIO_QUALITY_HIGH");
                         format.put("audioQuality", "AUDIO_QUALITY_HIGH");
+                        format.put("encoding", "m4a");
+                        format.put("clen", "");
+                        format.put("resolution", "");
                         adaptiveFormats.put(format);
                         Log.i(TAG, "Added Casquad 320kbps m4a stream for " + videoId);
                     }
@@ -431,8 +440,29 @@ public class PlaybackResolver {
                             if (f != null && f.has("url")) {
                                 String u = f.optString("url");
                                 if (u != null && !u.trim().isEmpty()) {
-                                    adaptiveFormats.put(f);
-                                    addedCount++;
+                                    try {
+                                        JSONObject cleanFormat = new JSONObject(f.toString());
+                                        String mime = cleanFormat.optString("mimeType", "audio/mp4; codecs=\"mp4a.40.2\"");
+                                        cleanFormat.put("type", mime);
+                                        long br = cleanFormat.optLong("bitrate", 128000);
+                                        cleanFormat.put("bitrate", String.valueOf(br));
+                                        if (!cleanFormat.has("quality")) {
+                                            cleanFormat.put("quality", cleanFormat.optString("audioQuality", "medium"));
+                                        }
+                                        if (!cleanFormat.has("encoding")) {
+                                            cleanFormat.put("encoding", mime.contains("opus") ? "opus" : "m4a");
+                                        }
+                                        if (!cleanFormat.has("clen")) {
+                                            cleanFormat.put("clen", cleanFormat.optString("contentLength", ""));
+                                        }
+                                        if (!cleanFormat.has("resolution")) {
+                                            cleanFormat.put("resolution", "");
+                                        }
+                                        String taggedUrl = u + (u.contains("?") ? "&fallback=1" : "?fallback=1");
+                                        cleanFormat.put("url", taggedUrl);
+                                        adaptiveFormats.put(cleanFormat);
+                                        addedCount++;
+                                    } catch (JSONException ignored) {}
                                 }
                             }
                         }
@@ -451,11 +481,17 @@ public class PlaybackResolver {
 
         JSONObject result = new JSONObject();
         result.put("id", videoId);
+        result.put("videoId", videoId);
         result.put("title", title != null ? title : "Unknown Title");
         result.put("author", author != null ? author : "Unknown Artist");
         result.put("authorId", "");
         result.put("lengthSeconds", lengthSeconds);
         result.put("adaptiveFormats", adaptiveFormats);
+        result.put("formatStreams", new JSONArray());
+        result.put("recommendedVideos", new JSONArray());
+        result.put("captions", new JSONArray());
+        result.put("liveNow", false);
+        result.put("proxy", "");
 
         JSONObject streamingData = new JSONObject();
         streamingData.put("adaptiveFormats", adaptiveFormats);

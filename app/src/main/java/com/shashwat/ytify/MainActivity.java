@@ -55,6 +55,52 @@ public class MainActivity extends Activity {
       "  window.__ytify_fetch_interceptor_installed = true;\n" +
       "  var LOCAL_PORT = 9999;\n" +
       "  var LOCAL_URL = 'http://127.0.0.1:' + LOCAL_PORT;\n" +
+      "  function showLocalServerNotification(videoId) {\n" +
+      "    try {\n" +
+      "      if (typeof Android !== 'undefined' && Android.showToast) {\n" +
+      "        Android.showToast('⚡ Local Server Stream Used (localhost:9999)');\n" +
+      "      }\n" +
+      "    } catch(e) {}\n" +
+      "    try {\n" +
+      "      var id = '__ytify_local_snackbar';\n" +
+      "      var existing = document.getElementById(id);\n" +
+      "      if (existing) existing.remove();\n" +
+      "      var snack = document.createElement('div');\n" +
+      "      snack.id = id;\n" +
+      "      snack.style.position = 'fixed';\n" +
+      "      snack.style.bottom = '82px';\n" +
+      "      snack.style.left = '50%';\n" +
+      "      snack.style.transform = 'translateX(-50%)';\n" +
+      "      snack.style.zIndex = '999999';\n" +
+      "      snack.style.backgroundColor = '#181825';\n" +
+      "      snack.style.color = '#a6e3a1';\n" +
+      "      snack.style.padding = '8px 16px';\n" +
+      "      snack.style.borderRadius = '20px';\n" +
+      "      snack.style.boxShadow = '0 6px 20px rgba(0,0,0,0.6)';\n" +
+      "      snack.style.border = '1px solid #a6e3a1';\n" +
+      "      snack.style.fontSize = '12px';\n" +
+      "      snack.style.fontWeight = '600';\n" +
+      "      snack.style.display = 'flex';\n" +
+      "      snack.style.alignItems = 'center';\n" +
+      "      snack.style.gap = '6px';\n" +
+      "      snack.style.pointerEvents = 'none';\n" +
+      "      snack.style.transition = 'opacity 0.3s ease, transform 0.3s ease';\n" +
+      "      snack.style.opacity = '0';\n" +
+      "      snack.innerHTML = '<span>⚡</span> Local Server Stream Used (localhost:9999)';\n" +
+      "      document.body.appendChild(snack);\n" +
+      "      requestAnimationFrame(function() {\n" +
+      "        snack.style.opacity = '1';\n" +
+      "        snack.style.transform = 'translateX(-50%) translateY(-6px)';\n" +
+      "      });\n" +
+      "      setTimeout(function() {\n" +
+      "        snack.style.opacity = '0';\n" +
+      "        snack.style.transform = 'translateX(-50%) translateY(10px)';\n" +
+      "        setTimeout(function() { if (snack.parentNode) snack.remove(); }, 400);\n" +
+      "      }, 3500);\n" +
+      "    } catch(err) {\n" +
+      "      console.error('[YtifyNative] Snackbar error:', err);\n" +
+      "    }\n" +
+      "  }\n" +
       "  var origFetch = window.fetch;\n" +
       "  window.fetch = async function(resource, init) {\n" +
       "    try {\n" +
@@ -77,6 +123,7 @@ public class MainActivity extends Activity {
       "          });\n" +
       "          if (localRes && localRes.ok) {\n" +
       "            console.log('[YtifyNative] Successfully resolved stream from localhost:9999 for:', videoId);\n" +
+      "            showLocalServerNotification(videoId);\n" +
       "            return localRes;\n" +
       "          }\n" +
       "          console.warn('[YtifyNative] Localhost:9999 returned status ' + (localRes ? localRes.status : 'null') + ', falling back to remote...');\n" +

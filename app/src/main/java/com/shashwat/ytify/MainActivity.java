@@ -53,12 +53,19 @@ public class MainActivity extends Activity {
       "  window.__mediaSessionHandlers = window.__mediaSessionHandlers || {};\n" +
       "  window.__currentAudio = window.__currentAudio || null;\n" +
       "  window.__currentMediaData = window.__currentMediaData || {\n" +
-      "    title: '', artist: '', album: 'Ytify', artwork: '', duration: 0, position: 0, state: 'none'\n" +
+      "    title: '', artist: '', album: '', artwork: '', duration: 0, position: 0, state: 'none', hasValidMetadata: false\n" +
       "  };\n" +
+      "  function cleanText(str) {\n" +
+      "    if (!str) return '';\n" +
+      "    var s = ('' + str).replace(/\\s*-\\s*ytify\\s*$/i, '').trim();\n" +
+      "    if (s.toLowerCase() === 'ytify' || s.toLowerCase() === 'free music streaming') return '';\n" +
+      "    return s;\n" +
+      "  }\n" +
       "  function sendToAndroid() {\n" +
       "    try {\n" +
       "      if (typeof Android === 'undefined' || !Android.updateMedia) return;\n" +
       "      var d = window.__currentMediaData;\n" +
+      "      if (!d.hasValidMetadata || !d.title) return;\n" +
       "      var dur = d.duration || 0;\n" +
       "      var pos = d.position || 0;\n" +
       "      if (window.__currentAudio) {\n" +
@@ -70,15 +77,85 @@ public class MainActivity extends Activity {
       "        }\n" +
       "      }\n" +
       "      Android.updateMedia(\n" +
-      "        d.title || document.title || 'Ytify',\n" +
+      "        d.title,\n" +
       "        d.artist || '',\n" +
-      "        d.album || 'Ytify',\n" +
+      "        d.album || '',\n" +
       "        d.artwork || '',\n" +
       "        Math.round(dur || 0),\n" +
       "        Math.round(pos || 0),\n" +
       "        d.state || 'none'\n" +
       "      );\n" +
       "    } catch (e) { console.error('Error sending media to Android:', e); }\n" +
+      "  }\n" +
+      "  function handleMetadataUpdate(meta) {\n" +
+      "    if (!meta) return;\n" +
+      "    var title = cleanText(meta.title);\n" +
+      "    if (!title) return;\n" +
+      "    var artist = cleanText(meta.artist);\n" +
+      "    var album = cleanText(meta.album);\n" +
+      "    var artwork = '';\n" +
+      "    if (meta.artwork && meta.artwork.length > 0) {\n" +
+      "      artwork = meta.artwork[meta.artwork.length - 1].src || '';\n" +
+      "    }\n" +
+      "    if (!artwork) {\n" +
+      "      try {\n" +
+      "        var mini = document.querySelector('.miniplayer img') || document.querySelector('img[alt^=\"Media Artwork for\"]');\n" +
+      "        if (mini && mini.src) artwork = mini.src;\n" +
+      "      } catch (e) {}\n" +
+      "    }\n" +
+      "    window.__currentMediaData.title = title;\n" +
+      "    window.__currentMediaData.artist = artist;\n" +
+      "    window.__currentMediaData.album = album;\n" +
+      "    window.__currentMediaData.hasValidMetadata = true;\n" +
+      "    if (artwork && artwork.startsWith('blob:')) {\n" +
+      "      fetch(artwork)\n" +
+      "        .then(function(res) { return res.blob(); })\n" +
+      "        .then(function(blob) {\n" +
+      "          var reader = new FileReader();\n" +
+      "          reader.onloadend = function() {\n" +
+      "            window.__currentMediaData.artwork = reader.result || '';\n" +
+      "            sendToAndroid();\n" +
+      "          };\n" +
+      "          reader.onerror = function() {\n" +
+      "            window.__currentMediaData.artwork = '';\n" +
+      "            sendToAndroid();\n" +
+      "          };\n" +
+      "          reader.readAsDataURL(blob);\n" +
+      "        })\n" +
+      "        .catch(function(e) {\n" +
+      "          window.__currentMediaData.artwork = '';\n" +
+      "          sendToAndroid();\n" +
+      "        });\n" +
+      "    } else {\n" +
+      "      window.__currentMediaData.artwork = artwork;\n" +
+      "      sendToAndroid();\n" +
+      "    }\n" +
+      "  }\n" +
+      "  var OrigMediaMetadata = window.MediaMetadata;\n" +
+      "  if (OrigMediaMetadata) {\n" +
+      "    window.MediaMetadata = function(init) {\n" +
+      "      var inst = new OrigMediaMetadata(init);\n" +
+      "      try { if (init) handleMetadataUpdate(init); } catch (e) {}\n" +
+      "      return inst;\n" +
+      "    };\n" +
+      "    window.MediaMetadata.prototype = OrigMediaMetadata.prototype;\n" +
+      "  }\n" +
+      "  if (window.MediaSession && window.MediaSession.prototype) {\n" +
+      "    try {\n" +
+      "      var protoDesc = Object.getOwnPropertyDescriptor(window.MediaSession.prototype, 'metadata');\n" +
+      "      var origProtoSet = protoDesc ? protoDesc.set : null;\n" +
+      "      var origProtoGet = protoDesc ? protoDesc.get : null;\n" +
+      "      Object.defineProperty(window.MediaSession.prototype, 'metadata', {\n" +
+      "        configurable: true,\n" +
+      "        enumerable: true,\n" +
+      "        get: function() { return origProtoGet ? origProtoGet.call(this) : this.__meta; },\n" +
+      "        set: function(val) {\n" +
+      "          this.__meta = val;\n" +
+      "          if (origProtoSet) { try { origProtoSet.call(this, val); } catch (e) {} }\n" +
+      "          handleMetadataUpdate(val);\n" +
+      "        }\n" +
+      "      });\n" +
+      "    } catch (e) {}\n" +
       "  }\n" +
       "  function hookAudio(audio) {\n" +
       "    if (!audio || audio.__hooked) return;\n" +
@@ -91,7 +168,11 @@ public class MainActivity extends Activity {
       "      if (audio.duration && !isNaN(audio.duration)) {\n" +
       "        window.__currentMediaData.duration = audio.duration * 1000;\n" +
       "      }\n" +
-      "      sendToAndroid();\n" +
+      "      if (navigator.mediaSession && navigator.mediaSession.metadata) {\n" +
+      "        handleMetadataUpdate(navigator.mediaSession.metadata);\n" +
+      "      } else {\n" +
+      "        sendToAndroid();\n" +
+      "      }\n" +
       "    });\n" +
       "    audio.addEventListener('pause', function() {\n" +
       "      window.__currentMediaData.state = 'paused';\n" +
@@ -112,7 +193,9 @@ public class MainActivity extends Activity {
       "      if (audio.duration && !isNaN(audio.duration)) {\n" +
       "        window.__currentMediaData.duration = audio.duration * 1000;\n" +
       "      }\n" +
-      "      sendToAndroid();\n" +
+      "      if (navigator.mediaSession && navigator.mediaSession.metadata) {\n" +
+      "        handleMetadataUpdate(navigator.mediaSession.metadata);\n" +
+      "      }\n" +
       "    });\n" +
       "  }\n" +
       "  var OrigAudio = window.Audio;\n" +
@@ -152,18 +235,10 @@ public class MainActivity extends Activity {
       "        get() { return _metadata; },\n" +
       "        set(meta) {\n" +
       "          _metadata = meta;\n" +
-      "          if (meta) {\n" +
-      "            window.__currentMediaData.title = meta.title || '';\n" +
-      "            window.__currentMediaData.artist = meta.artist || '';\n" +
-      "            window.__currentMediaData.album = meta.album || 'Ytify';\n" +
-      "            if (meta.artwork && meta.artwork.length > 0) {\n" +
-      "              window.__currentMediaData.artwork = meta.artwork[meta.artwork.length - 1].src || '';\n" +
-      "            }\n" +
-      "          }\n" +
-      "          sendToAndroid();\n" +
+      "          handleMetadataUpdate(meta);\n" +
       "        }\n" +
       "      });\n" +
-      "    } catch (e) { console.error('Error defining metadata property:', e); }\n" +
+      "    } catch (e) {}\n" +
       "    var _playbackState = ms.playbackState;\n" +
       "    try {\n" +
       "      Object.defineProperty(ms, 'playbackState', {\n" +
@@ -176,7 +251,7 @@ public class MainActivity extends Activity {
       "          sendToAndroid();\n" +
       "        }\n" +
       "      });\n" +
-      "    } catch (e) { console.error('Error defining playbackState property:', e); }\n" +
+      "    } catch (e) {}\n" +
       "  }\n" +
       "  window.__nativePlay = function() {\n" +
       "    if (window.__mediaSessionHandlers['play']) {\n" +
@@ -525,18 +600,26 @@ public class MainActivity extends Activity {
 
     @JavascriptInterface
     public void updateMedia(String title, String artist, String album, String artworkUrl, long duration, long position, String state) {
-      if (title == null || title.isEmpty() || "none".equals(state)) {
+      if (title == null || "none".equals(state)) {
         if ("none".equals(state)) {
           bgStop();
         }
         return;
       }
+      String cleanTitle = title.replaceAll("(?i)\\s*-\\s*ytify\\s*$", "").trim();
+      if (cleanTitle.isEmpty() || cleanTitle.equalsIgnoreCase("ytify") || cleanTitle.equalsIgnoreCase("free music streaming")) {
+        return;
+      }
       isPlaying = "playing".equals(state);
       Intent intent = new Intent(getApplicationContext(), ForegroundService.class);
       intent.putExtra("icon", artworkUrl != null ? artworkUrl : "");
-      intent.putExtra("title", title);
-      intent.putExtra("subtitle", artist != null ? artist : "");
-      intent.putExtra("album", album != null ? album : "");
+      intent.putExtra("title", cleanTitle);
+      intent.putExtra("subtitle", artist != null ? artist.replaceAll("(?i)\\s*-\\s*ytify\\s*$", "").trim() : "");
+      String cleanAlbum = album != null ? album.replaceAll("(?i)\\s*-\\s*ytify\\s*$", "").trim() : "";
+      if (cleanAlbum.equalsIgnoreCase("ytify") || cleanAlbum.equalsIgnoreCase("free music streaming")) {
+        cleanAlbum = "";
+      }
+      intent.putExtra("album", cleanAlbum);
       intent.putExtra("duration", duration);
       intent.putExtra("currentPosition", position);
       intent.putExtra("action", isPlaying ? "play" : "pause");

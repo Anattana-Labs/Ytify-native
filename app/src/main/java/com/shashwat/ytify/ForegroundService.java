@@ -43,7 +43,7 @@ public class ForegroundService extends Service {
 
     private String currentTitle = "";
     private String currentArtist = "";
-    private String currentAlbum = "Ytify";
+    private String currentAlbum = "";
     private String currentArtworkUrl = "";
     private Bitmap cachedArtwork = null;
     private long currentDuration = 0;
@@ -60,7 +60,7 @@ public class ForegroundService extends Service {
     }
 
     private void initMediaSession() {
-        mediaSession = new MediaSession(getApplicationContext(), "YtifyMediaSession");
+        mediaSession = new MediaSession(getApplicationContext(), "MediaSession");
         mediaSession.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
 
         mediaSession.setCallback(new MediaSession.Callback() {
@@ -125,7 +125,7 @@ public class ForegroundService extends Service {
                     "Media Playback",
                     NotificationManager.IMPORTANCE_LOW
             );
-            channel.setDescription("Ytify media playback controls");
+            channel.setDescription("Media playback controls");
             channel.setShowBadge(false);
             channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
             if (notificationManager != null) {
@@ -142,6 +142,15 @@ public class ForegroundService extends Service {
         return START_NOT_STICKY;
     }
 
+    private String cleanText(String text) {
+        if (text == null) return "";
+        String res = text.replaceAll("(?i)\\s*-\\s*ytify\\s*$", "").trim();
+        if (res.equalsIgnoreCase("ytify") || res.equalsIgnoreCase("free music streaming")) {
+            return "";
+        }
+        return res;
+    }
+
     private void handleIntent(Intent intent) {
         String title = intent.getStringExtra("title");
         String subtitle = intent.getStringExtra("subtitle");
@@ -151,14 +160,17 @@ public class ForegroundService extends Service {
         long duration = intent.getLongExtra("duration", 0);
         long currentPosition = intent.getLongExtra("currentPosition", 0);
 
-        if (title != null && !title.isEmpty()) {
-            currentTitle = title;
+        if (title != null) {
+            String clean = cleanText(title);
+            if (!clean.isEmpty()) {
+                currentTitle = clean;
+            }
         }
         if (subtitle != null) {
-            currentArtist = subtitle;
+            currentArtist = cleanText(subtitle);
         }
-        if (album != null && !album.isEmpty()) {
-            currentAlbum = album;
+        if (album != null) {
+            currentAlbum = cleanText(album);
         }
         if (duration > 0) {
             currentDuration = duration;
@@ -213,41 +225,71 @@ public class ForegroundService extends Service {
     }
 
     private Bitmap loadBitmap(String source) {
-        if (source == null || source.isEmpty()) return null;
+        if (source == null || source.trim().isEmpty()) return null;
+        source = source.trim();
         try {
-            if (source.startsWith("data:image")) {
+            if (source.startsWith("data:image") || source.startsWith("data:")) {
                 int comma = source.indexOf(",");
                 if (comma > 0) {
                     byte[] bytes = Base64.decode(source.substring(comma + 1), Base64.DEFAULT);
                     return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
                 }
             } else if (!source.startsWith("http://") && !source.startsWith("https://")) {
-                byte[] bytes = Base64.decode(source, Base64.DEFAULT);
-                return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                try {
+                    byte[] bytes = Base64.decode(source, Base64.DEFAULT);
+                    if (bytes != null && bytes.length > 0) {
+                        return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                    }
+                } catch (Exception ignored) {}
             }
 
             URL url = new URL(source);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(6000);
-            conn.setReadTimeout(6000);
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36");
+            conn.setRequestProperty("Accept", "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8");
+            conn.setInstanceFollowRedirects(true);
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(10000);
             conn.setDoInput(true);
             conn.connect();
-            try (InputStream is = conn.getInputStream()) {
-                return BitmapFactory.decodeStream(is);
+
+            int code = conn.getResponseCode();
+            if (code == HttpURLConnection.HTTP_MOVED_PERM || code == HttpURLConnection.HTTP_MOVED_TEMP || code == 307 || code == 308) {
+                String newUrl = conn.getHeaderField("Location");
+                if (newUrl != null) {
+                    return loadBitmap(newUrl);
+                }
+            }
+
+            if (code >= 200 && code < 300) {
+                try (InputStream is = conn.getInputStream();
+                     java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream()) {
+                    byte[] buffer = new byte[8192];
+                    int n;
+                    while ((n = is.read(buffer)) != -1) {
+                        baos.write(buffer, 0, n);
+                    }
+                    byte[] imageBytes = baos.toByteArray();
+                    Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
+                    if (bitmap != null) {
+                        Log.d(TAG, "Loaded artwork bitmap: " + bitmap.getWidth() + "x" + bitmap.getHeight());
+                    }
+                    return bitmap;
+                }
+            } else {
+                Log.e(TAG, "HTTP error " + code + " loading artwork: " + source);
             }
         } catch (Exception e) {
-            Log.e(TAG, "Failed to load artwork: " + e.getMessage());
-            return null;
+            Log.e(TAG, "Failed to load artwork: " + e.getMessage(), e);
         }
+        return null;
     }
 
     private void renderNotificationAndSession() {
         Context cont = getApplicationContext();
-        Bitmap displayArt = cachedArtwork != null
-                ? cachedArtwork
-                : BitmapFactory.decodeResource(getResources(), R.drawable.app_icon);
 
-        updateMediaSessionMetadata(currentTitle, currentArtist, currentAlbum, displayArt, currentDuration);
+        updateMediaSessionMetadata(currentTitle, currentArtist, currentAlbum, cachedArtwork, currentDuration);
         updatePlaybackState(currentPosition, currentPlaybackState);
 
         int pendingIntentFlags = PendingIntent.FLAG_UPDATE_CURRENT |
@@ -282,14 +324,20 @@ public class ForegroundService extends Service {
                 .setShowActionsInCompactView(0, 1, 2);
 
         builder.setSmallIcon(R.drawable.app_icon)
-                .setContentTitle(currentTitle.isEmpty() ? "Ytify" : currentTitle)
-                .setContentText(currentArtist.isEmpty() ? "Playing audio" : currentArtist)
-                .setSubText(currentAlbum)
-                .setLargeIcon(displayArt)
+                .setContentTitle(currentTitle.isEmpty() ? "Playing Audio" : currentTitle)
+                .setContentText(currentArtist)
                 .setContentIntent(openAppPendingIntent)
                 .setStyle(mediaStyle)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setOngoing(currentPlaybackState == PlaybackState.STATE_PLAYING);
+
+        if (currentAlbum != null && !currentAlbum.isEmpty()) {
+            builder.setSubText(currentAlbum);
+        }
+
+        if (cachedArtwork != null) {
+            builder.setLargeIcon(cachedArtwork);
+        }
 
         builder.addAction(R.drawable.ic_skip_previous_white, "Previous", prevPendingIntent);
 

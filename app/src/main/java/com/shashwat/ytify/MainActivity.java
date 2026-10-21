@@ -164,6 +164,29 @@ public class MainActivity extends Activity {
       "    }\n" +
       "    return origFetch.apply(this, arguments);\n" +
       "  };\n" +
+      "  try {\n" +
+      "    var origVideoSrcDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');\n" +
+      "    if (origVideoSrcDesc && origVideoSrcDesc.set) {\n" +
+      "      var origSetSrc = origVideoSrcDesc.set;\n" +
+      "      origVideoSrcDesc.set = function(val) {\n" +
+      "        if (this instanceof HTMLVideoElement && typeof val === 'string' && (val.endsWith('/Resolution') || val === 'Resolution')) {\n" +
+      "          var sel = document.querySelector('.watcher select');\n" +
+      "          if (sel && sel.options) {\n" +
+      "            for (var i = 0; i < sel.options.length; i++) {\n" +
+      "              var optVal = sel.options[i].value;\n" +
+      "              if (optVal && optVal.startsWith('http')) {\n" +
+      "                val = optVal;\n" +
+      "                sel.selectedIndex = i;\n" +
+      "                break;\n" +
+      "              }\n" +
+      "            }\n" +
+      "          }\n" +
+      "        }\n" +
+      "        return origSetSrc.call(this, val);\n" +
+      "      };\n" +
+      "      Object.defineProperty(HTMLMediaElement.prototype, 'src', origVideoSrcDesc);\n" +
+      "    }\n" +
+      "  } catch (e) {}\n" +
       "  console.log('[YtifyNative] Stream interceptor installed: primary=localhost:9999');\n" +
       "})();\n";
 

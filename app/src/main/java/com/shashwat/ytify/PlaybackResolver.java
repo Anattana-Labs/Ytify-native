@@ -1,6 +1,5 @@
 package com.shashwat.ytify;
 
-import android.text.TextUtils;
 import android.util.Log;
 
 import org.json.JSONArray;
@@ -12,16 +11,14 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.net.URI;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
- * Turns a video id into playable audio streams by asking the Worker API,
- * Casquad fallback API, and unciphered YouTube InnerTube clients (VisionOS, Android VR, TV HTML5) in sequence.
- * Direct, lightweight, zero-bloat stream extraction using pure Android networking.
+ * Pure YouTube InnerTube stream extractor for Ytify.
+ * Completely local, zero external worker/bucket APIs, zero external extractor library.
+ * Direct unciphered InnerTube multi-client pipeline for both audio and video playback.
  */
 public class PlaybackResolver {
 
@@ -87,10 +84,34 @@ public class PlaybackResolver {
             "Android", "12", "Oculus", "Quest 3", "32", "Android VR 1.65"
     );
 
+    public static final YouTubeClient AndroidVr16148 = new YouTubeClient(
+            "ANDROID_VR", "1.61.48", "28",
+            "com.google.android.apps.youtube.vr.oculus/1.61.48 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/132.0.6808.3)",
+            "Android", "12", "Oculus", "Quest 3", "32", "Android VR 1.61"
+    );
+
+    public static final YouTubeClient AndroidVr14332 = new YouTubeClient(
+            "ANDROID_VR", "1.43.32", "28",
+            "com.google.android.apps.youtube.vr.oculus/1.43.32 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/107.0.5284.2)",
+            "Android", "12", "Oculus", "Quest 3", "32", "Android VR 1.43"
+    );
+
+    public static final YouTubeClient AndroidVrNoAuth = new YouTubeClient(
+            "ANDROID_VR", "1.65.10", "28",
+            "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12; en_US; Oculus Quest 3; Build/SQ3A.220605.009.A1; Cronet/132.0.6808.3)",
+            null, null, null, null, null, "Android VR (no device)"
+    );
+
     public static final YouTubeClient TvHtml5 = new YouTubeClient(
             "TVHTML5", "7.20230405.08.01", "7",
             "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
             null, null, null, null, null, "TV HTML5"
+    );
+
+    public static final YouTubeClient AndroidTestSuite = new YouTubeClient(
+            "ANDROID_TESTSUITE", "1.9", "3",
+            "Google-HTTP-Java-Client/1.43.3 (gzip)",
+            null, null, null, null, "30", "Android TestSuite"
     );
 
     private static String readResponse(HttpURLConnection conn) throws Exception {
@@ -105,205 +126,6 @@ public class PlaybackResolver {
             }
             return sb.toString().trim();
         }
-    }
-
-    public static boolean needsRedirectResolution(String url) {
-        if (url == null) return false;
-        try {
-            String host = URI.create(url).getHost();
-            if (host == null) return false;
-            host = host.toLowerCase();
-            return host.contains("huggingface.co") ||
-                    host.contains("workers.dev") ||
-                    host.contains("onrender.com") ||
-                    host.contains("hf.space") ||
-                    host.contains("casquad");
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    public static String resolveDirectStreamUrl(String url, int maxHops) {
-        if (url == null) return null;
-        if (!url.startsWith("http://") && !url.startsWith("https://")) return url;
-        if (!needsRedirectResolution(url)) return url;
-
-        String currentUrl = url;
-        for (int hop = 0; hop < maxHops; hop++) {
-            HttpURLConnection conn = null;
-            try {
-                conn = (HttpURLConnection) new URL(currentUrl).openConnection();
-                conn.setConnectTimeout(CONNECT_TIMEOUT);
-                conn.setReadTimeout(READ_TIMEOUT);
-                conn.setInstanceFollowRedirects(false);
-                conn.setRequestMethod("GET");
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14)");
-                conn.setRequestProperty("Range", "bytes=0-0");
-
-                int code = conn.getResponseCode();
-                if (code >= 300 && code < 400) {
-                    String loc = conn.getHeaderField("Location");
-                    if (loc != null && !loc.trim().isEmpty()) {
-                        URI currentUri = URI.create(currentUrl);
-                        URI resolved = currentUri.resolve(loc.trim());
-                        currentUrl = resolved.toString();
-                        if (!needsRedirectResolution(currentUrl)) {
-                            return currentUrl;
-                        }
-                    } else {
-                        break;
-                    }
-                } else if (code >= 200 && code < 300) {
-                    return currentUrl;
-                } else {
-                    Log.d(TAG, "Redirect probe returned HTTP " + code + " for " + currentUrl);
-                    break;
-                }
-            } catch (Exception e) {
-                Log.d(TAG, "Redirect probe error: " + e.getMessage());
-                break;
-            } finally {
-                if (conn != null) conn.disconnect();
-            }
-        }
-        return currentUrl;
-    }
-
-    public static boolean isPlayable(String url) {
-        if (url == null || url.trim().isEmpty()) return false;
-        HttpURLConnection conn = null;
-        try {
-            conn = (HttpURLConnection) new URL(url).openConnection();
-            conn.setConnectTimeout(4000);
-            conn.setReadTimeout(4000);
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14)");
-            conn.setRequestProperty("Range", "bytes=0-0");
-            int code = conn.getResponseCode();
-            return code >= 200 && code < 400;
-        } catch (Exception e) {
-            return false;
-        } finally {
-            if (conn != null) conn.disconnect();
-        }
-    }
-
-    public static class WorkerStreamResult {
-        public String title;
-        public String artist;
-        public String thumbnail;
-        public long durationSec;
-        public String saavnStreamUrl;
-        public String muzoAacStreamUrl;
-        public String muzoLosslessUrl;
-    }
-
-    public static WorkerStreamResult fetchWorkerStream(String videoId) {
-        String apiUrl = "https://bitter-meadow-ad01.shashwat-coding.workers.dev/v1?videoId=" + videoId + "&debug=true";
-        HttpURLConnection conn = null;
-        try {
-            conn = (HttpURLConnection) new URL(apiUrl).openConnection();
-            conn.setConnectTimeout(CONNECT_TIMEOUT);
-            conn.setReadTimeout(READ_TIMEOUT);
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14)");
-
-            String body = readResponse(conn);
-            if (!body.startsWith("{")) return null;
-            JSONObject json = new JSONObject(body);
-
-            WorkerStreamResult res = new WorkerStreamResult();
-            JSONObject meta = json.optJSONObject("metadata");
-            if (meta != null) {
-                res.title = meta.optString("title", null);
-                JSONArray artistsArr = meta.optJSONArray("artists");
-                if (artistsArr != null && artistsArr.length() > 0) {
-                    List<String> names = new ArrayList<>();
-                    for (int i = 0; i < artistsArr.length(); i++) {
-                        JSONObject a = artistsArr.optJSONObject(i);
-                        if (a != null) {
-                            String n = a.optString("name", "");
-                            if (!n.trim().isEmpty()) names.add(n.trim());
-                        }
-                    }
-                    if (!names.isEmpty()) {
-                        res.artist = TextUtils.join(", ", names);
-                    }
-                }
-                JSONArray thumbs = meta.optJSONArray("thumbnails");
-                if (thumbs != null && thumbs.length() > 0) {
-                    JSONObject lastThumb = thumbs.optJSONObject(thumbs.length() - 1);
-                    if (lastThumb != null) {
-                        res.thumbnail = lastThumb.optString("url", null);
-                    }
-                }
-                res.durationSec = parseDuration(meta.optString("duration", ""));
-            }
-
-            JSONObject saavnObj = json.optJSONObject("saavn");
-            if (saavnObj != null) {
-                res.saavnStreamUrl = saavnObj.optString("streamUrl", null);
-            }
-
-            JSONObject muzoObj = json.optJSONObject("muzo");
-            if (muzoObj != null) {
-                res.muzoLosslessUrl = muzoObj.optString("lossless", null);
-                res.muzoAacStreamUrl = muzoObj.optString("aacStream", null);
-            }
-
-            return res;
-        } catch (Exception e) {
-            Log.d(TAG, videoId + " worker API error: " + e.getMessage());
-            return null;
-        } finally {
-            if (conn != null) conn.disconnect();
-        }
-    }
-
-    public static class CasquadResult {
-        public String name;
-        public String artist;
-        public String url;
-        public String losslessUrl;
-    }
-
-    public static CasquadResult fetchCasquadFallbackStream(String videoId) {
-        String apiUrl = "https://muzo-bot-1.onrender.com/api/stream?id=" + videoId;
-        HttpURLConnection conn = null;
-        try {
-            conn = (HttpURLConnection) new URL(apiUrl).openConnection();
-            conn.setConnectTimeout(CONNECT_TIMEOUT);
-            conn.setReadTimeout(READ_TIMEOUT);
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14)");
-
-            String body = readResponse(conn);
-            if (!body.startsWith("{")) return null;
-            JSONObject json = new JSONObject(body);
-
-            CasquadResult res = new CasquadResult();
-            res.name = json.optString("name", null);
-            res.artist = json.optString("artist", null);
-            res.url = json.optString("url", null);
-            res.losslessUrl = json.optString("lossless", null);
-            return res;
-        } catch (Exception e) {
-            Log.d(TAG, videoId + " casquad API error: " + e.getMessage());
-            return null;
-        } finally {
-            if (conn != null) conn.disconnect();
-        }
-    }
-
-    private static long parseDuration(String raw) {
-        if (raw == null || raw.trim().isEmpty()) return 0L;
-        String[] parts = raw.trim().split(":");
-        try {
-            if (parts.length == 1) return Long.parseLong(parts[0]);
-            if (parts.length == 2) return Long.parseLong(parts[0]) * 60 + Long.parseLong(parts[1]);
-            if (parts.length == 3) return Long.parseLong(parts[0]) * 3600 + Long.parseLong(parts[1]) * 60 + Long.parseLong(parts[2]);
-        } catch (Exception ignored) {}
-        return 0L;
     }
 
     public static JSONObject queryInnerTube(String videoId, YouTubeClient client) {
@@ -354,177 +176,220 @@ public class PlaybackResolver {
     }
 
     /**
-     * Resolves all available audio and video streams for videoId and returns the unified JSON response.
+     * Resolves all available audio and video streams for videoId using pure YouTube InnerTube.
+     * No external scraping library, no external bucket/worker APIs.
      */
     public static JSONObject resolveStreams(String videoId) throws Exception {
-        String title = null;
-        String author = null;
-        long lengthSeconds = 0;
-        JSONArray adaptiveFormats = new JSONArray();
+        YouTubeClient[] clients = new YouTubeClient[]{
+                VisionOs,
+                AndroidVr16510,
+                AndroidVr16148,
+                AndroidVr14332,
+                AndroidVrNoAuth,
+                TvHtml5,
+                AndroidTestSuite
+        };
 
-        // 1. Check Worker Stream (320kbps m4a)
-        WorkerStreamResult worker = fetchWorkerStream(videoId);
-        if (worker != null) {
-            if (worker.title != null && !worker.title.trim().isEmpty()) title = worker.title.trim();
-            if (worker.artist != null && !worker.artist.trim().isEmpty()) author = worker.artist.trim();
-            if (worker.durationSec > 0) lengthSeconds = worker.durationSec;
+        JSONObject successfulResponse = null;
+        YouTubeClient successfulClient = null;
 
-            if (worker.saavnStreamUrl != null && !worker.saavnStreamUrl.trim().isEmpty()) {
-                String directSaavn = resolveDirectStreamUrl(worker.saavnStreamUrl, 3);
-                if (directSaavn != null) {
-                    JSONObject format = new JSONObject();
-                    String proxiedSaavn = "http://127.0.0.1:9999/proxy?itag=140&url=" + java.net.URLEncoder.encode(directSaavn, "UTF-8");
-                    format.put("url", proxiedSaavn);
-                    format.put("type", "audio/mp4; codecs=\"mp4a.40.2\"");
-                    format.put("mimeType", "audio/mp4; codecs=\"mp4a.40.2\"");
-                    format.put("itag", 140);
-                    format.put("bitrate", "320000");
-                    format.put("quality", "AUDIO_QUALITY_HIGH");
-                    format.put("audioQuality", "AUDIO_QUALITY_HIGH");
-                    format.put("encoding", "m4a");
-                    format.put("clen", "");
-                    format.put("resolution", "");
-                    adaptiveFormats.put(format);
-
-                    try {
-                        JSONObject opusFormat = new JSONObject(format.toString());
-                        String opusProxiedSaavn = "http://127.0.0.1:9999/proxy?itag=251&url=" + java.net.URLEncoder.encode(directSaavn, "UTF-8");
-                        opusFormat.put("url", opusProxiedSaavn);
-                        opusFormat.put("type", "audio/webm; codecs=\"opus\"");
-                        opusFormat.put("mimeType", "audio/webm; codecs=\"opus\"");
-                        opusFormat.put("itag", 251);
-                        opusFormat.put("encoding", "opus");
-                        adaptiveFormats.put(opusFormat);
-                    } catch (JSONException ignored) {}
-
-                    Log.i(TAG, "Added Worker Saavn 320kbps m4a stream for " + videoId);
-                }
-            }
-        }
-
-        // 2. Check Casquad Fallback
-        if (adaptiveFormats.length() == 0) {
-            CasquadResult casquad = fetchCasquadFallbackStream(videoId);
-            if (casquad != null) {
-                if (title == null && casquad.name != null) title = casquad.name.trim();
-                if (author == null && casquad.artist != null) author = casquad.artist.trim();
-                if (casquad.url != null && !casquad.url.trim().isEmpty()) {
-                    String directCasquad = resolveDirectStreamUrl(casquad.url, 3);
-                    if (directCasquad != null) {
-                        JSONObject format = new JSONObject();
-                        String proxiedCasquad = "http://127.0.0.1:9999/proxy?itag=140&url=" + java.net.URLEncoder.encode(directCasquad, "UTF-8");
-                        format.put("url", proxiedCasquad);
-                        format.put("type", "audio/mp4; codecs=\"mp4a.40.2\"");
-                        format.put("mimeType", "audio/mp4; codecs=\"mp4a.40.2\"");
-                        format.put("itag", 140);
-                        format.put("bitrate", "320000");
-                        format.put("quality", "AUDIO_QUALITY_HIGH");
-                        format.put("audioQuality", "AUDIO_QUALITY_HIGH");
-                        format.put("encoding", "m4a");
-                        format.put("clen", "");
-                        format.put("resolution", "");
-                        adaptiveFormats.put(format);
-
-                        try {
-                            JSONObject opusCasquad = new JSONObject(format.toString());
-                            String opusProxiedCasquad = "http://127.0.0.1:9999/proxy?itag=251&url=" + java.net.URLEncoder.encode(directCasquad, "UTF-8");
-                            opusCasquad.put("url", opusProxiedCasquad);
-                            opusCasquad.put("type", "audio/webm; codecs=\"opus\"");
-                            opusCasquad.put("mimeType", "audio/webm; codecs=\"opus\"");
-                            opusCasquad.put("itag", 251);
-                            opusCasquad.put("encoding", "opus");
-                            adaptiveFormats.put(opusCasquad);
-                        } catch (JSONException ignored) {}
-
-                        Log.i(TAG, "Added Casquad 320kbps m4a stream for " + videoId);
-                    }
-                }
-            }
-        }
-
-        // 3. Try Native Unciphered InnerTube Clients (VisionOs, AndroidVR, TVHTML5)
-        YouTubeClient[] clients = new YouTubeClient[]{ VisionOs, AndroidVr16510, TvHtml5 };
         for (YouTubeClient client : clients) {
-            JSONObject itResponse = queryInnerTube(videoId, client);
-            if (itResponse != null) {
-                JSONObject videoDetails = itResponse.optJSONObject("videoDetails");
-                if (videoDetails != null) {
-                    if (title == null) title = videoDetails.optString("title", "");
-                    if (author == null) author = videoDetails.optString("author", "");
-                    if (lengthSeconds == 0) lengthSeconds = videoDetails.optLong("lengthSeconds", 0);
-                }
-
-                JSONObject streamingData = itResponse.optJSONObject("streamingData");
+            JSONObject resp = queryInnerTube(videoId, client);
+            if (resp != null) {
+                JSONObject streamingData = resp.optJSONObject("streamingData");
                 if (streamingData != null) {
-                    JSONArray itFormats = streamingData.optJSONArray("adaptiveFormats");
-                    if (itFormats != null) {
-                        int addedCount = 0;
-                        for (int i = 0; i < itFormats.length(); i++) {
-                            JSONObject f = itFormats.optJSONObject(i);
-                            if (f != null && f.has("url")) {
-                                String u = f.optString("url");
-                                if (u != null && !u.trim().isEmpty()) {
-                                    try {
-                                        JSONObject cleanFormat = new JSONObject(f.toString());
-                                        int itagVal = cleanFormat.optInt("itag", 140);
-                                        cleanFormat.put("itag", itagVal);
-                                        String mime = cleanFormat.optString("mimeType", "audio/mp4; codecs=\"mp4a.40.2\"");
-                                        cleanFormat.put("type", mime);
-                                        long br = cleanFormat.optLong("bitrate", 128000);
-                                        cleanFormat.put("bitrate", String.valueOf(br));
-                                        if (!cleanFormat.has("quality")) {
-                                            cleanFormat.put("quality", cleanFormat.optString("audioQuality", "medium"));
-                                        }
-                                        if (!cleanFormat.has("encoding")) {
-                                            cleanFormat.put("encoding", mime.contains("opus") ? "opus" : "m4a");
-                                        }
-                                        if (!cleanFormat.has("clen")) {
-                                            cleanFormat.put("clen", cleanFormat.optString("contentLength", ""));
-                                        }
-                                        if (!cleanFormat.has("resolution")) {
-                                            cleanFormat.put("resolution", "");
-                                        }
-                                        String taggedUrl = u;
-                                        if (!taggedUrl.contains("itag=")) {
-                                            taggedUrl = taggedUrl + (taggedUrl.contains("?") ? "&itag=" + itagVal : "?itag=" + itagVal);
-                                        }
-                                        cleanFormat.put("url", taggedUrl);
-                                        adaptiveFormats.put(cleanFormat);
-                                        addedCount++;
-                                    } catch (JSONException ignored) {}
-                                }
+                    JSONArray adaptive = streamingData.optJSONArray("adaptiveFormats");
+                    JSONArray muxed = streamingData.optJSONArray("formats");
+                    boolean hasPlayableUrl = false;
+                    if (adaptive != null) {
+                        for (int i = 0; i < adaptive.length(); i++) {
+                            JSONObject f = adaptive.optJSONObject(i);
+                            if (f != null && f.has("url") && !f.optString("url").trim().isEmpty()) {
+                                hasPlayableUrl = true;
+                                break;
                             }
                         }
-                        if (addedCount > 0) {
-                            Log.i(TAG, "Acquired " + addedCount + " unciphered streams from " + client.friendlyName);
-                            break;
+                    }
+                    if (!hasPlayableUrl && muxed != null) {
+                        for (int i = 0; i < muxed.length(); i++) {
+                            JSONObject f = muxed.optJSONObject(i);
+                            if (f != null && f.has("url") && !f.optString("url").trim().isEmpty()) {
+                                hasPlayableUrl = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (hasPlayableUrl) {
+                        successfulResponse = resp;
+                        successfulClient = client;
+                        Log.i(TAG, "Successfully extracted unciphered streams from InnerTube client: " + client.friendlyName);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (successfulResponse == null) {
+            throw new Exception("YouTube InnerTube extraction failed for videoId " + videoId + ": all unciphered stream clients failed");
+        }
+
+        String title = "Unknown Title";
+        String author = "Unknown Artist";
+        long lengthSeconds = 0;
+
+        JSONObject videoDetails = successfulResponse.optJSONObject("videoDetails");
+        if (videoDetails != null) {
+            title = videoDetails.optString("title", "Unknown Title");
+            author = videoDetails.optString("author", "Unknown Artist");
+            lengthSeconds = videoDetails.optLong("lengthSeconds", 0);
+        }
+
+        JSONObject streamingData = successfulResponse.optJSONObject("streamingData");
+        JSONArray rawAdaptive = streamingData != null ? streamingData.optJSONArray("adaptiveFormats") : null;
+        JSONArray rawMuxed = streamingData != null ? streamingData.optJSONArray("formats") : null;
+
+        JSONArray outAdaptiveFormats = new JSONArray();
+        JSONArray outFormatStreams = new JSONArray();
+
+        // 1. Process adaptiveFormats (separate audio-only & video-only streams)
+        if (rawAdaptive != null) {
+            for (int i = 0; i < rawAdaptive.length(); i++) {
+                JSONObject f = rawAdaptive.optJSONObject(i);
+                if (f == null) continue;
+                String rawUrl = f.optString("url", null);
+                if (rawUrl == null || rawUrl.trim().isEmpty()) continue; // skip ciphered formats
+
+                JSONObject cleanFormat = new JSONObject(f.toString());
+                int itagVal = cleanFormat.optInt("itag", 0);
+                String mime = cleanFormat.optString("mimeType", "");
+                boolean isVideo = mime.startsWith("video/");
+                boolean isAudio = mime.startsWith("audio/");
+
+                cleanFormat.put("type", mime);
+                cleanFormat.put("mimeType", mime);
+                cleanFormat.put("itag", itagVal);
+
+                long br = cleanFormat.optLong("bitrate", 0);
+                cleanFormat.put("bitrate", String.valueOf(br));
+                cleanFormat.put("clen", cleanFormat.optString("contentLength", ""));
+
+                if (isVideo) {
+                    String qLabel = cleanFormat.optString("qualityLabel", "");
+                    if (qLabel.isEmpty() && cleanFormat.has("height")) {
+                        qLabel = cleanFormat.optInt("height") + "p";
+                    }
+                    if (qLabel.isEmpty()) {
+                        qLabel = cleanFormat.optString("quality", "360p");
+                    }
+                    String baseRes = qLabel.replaceAll("(?i)[^0-9p]", "");
+                    if (baseRes.isEmpty()) baseRes = qLabel;
+
+                    cleanFormat.put("resolution", baseRes);
+                    cleanFormat.put("quality", baseRes);
+                    cleanFormat.put("qualityLabel", qLabel);
+                } else if (isAudio) {
+                    cleanFormat.put("resolution", "");
+                    cleanFormat.put("quality", cleanFormat.optString("audioQuality", "medium"));
+                    cleanFormat.put("encoding", mime.contains("opus") ? "opus" : "m4a");
+                }
+
+                String proxiedUrl = "http://127.0.0.1:9999/proxy?itag=" + itagVal + "&url=" + URLEncoder.encode(rawUrl, "UTF-8");
+                cleanFormat.put("url", proxiedUrl);
+
+                outAdaptiveFormats.put(cleanFormat);
+            }
+        }
+
+        // 2. Process formatStreams (muxed audio+video formats: itag 18, 22, etc.)
+        if (rawMuxed != null) {
+            for (int i = 0; i < rawMuxed.length(); i++) {
+                JSONObject f = rawMuxed.optJSONObject(i);
+                if (f == null) continue;
+                String rawUrl = f.optString("url", null);
+                if (rawUrl == null || rawUrl.trim().isEmpty()) continue;
+
+                JSONObject cleanFormat = new JSONObject(f.toString());
+                int itagVal = cleanFormat.optInt("itag", 0);
+                String mime = cleanFormat.optString("mimeType", "video/mp4");
+
+                cleanFormat.put("type", mime);
+                cleanFormat.put("mimeType", mime);
+                cleanFormat.put("itag", itagVal);
+
+                long br = cleanFormat.optLong("bitrate", 0);
+                cleanFormat.put("bitrate", String.valueOf(br));
+                cleanFormat.put("clen", cleanFormat.optString("contentLength", ""));
+
+                String qLabel = cleanFormat.optString("qualityLabel", "");
+                if (qLabel.isEmpty() && cleanFormat.has("height")) {
+                    qLabel = cleanFormat.optInt("height") + "p";
+                }
+                if (qLabel.isEmpty()) {
+                    qLabel = cleanFormat.optString("quality", "360p");
+                }
+                String baseRes = qLabel.replaceAll("(?i)[^0-9p]", "");
+                if (baseRes.isEmpty()) baseRes = qLabel;
+
+                cleanFormat.put("resolution", baseRes);
+                cleanFormat.put("quality", baseRes);
+                cleanFormat.put("qualityLabel", qLabel);
+
+                String proxiedUrl = "http://127.0.0.1:9999/proxy?itag=" + itagVal + "&url=" + URLEncoder.encode(rawUrl, "UTF-8");
+                cleanFormat.put("url", proxiedUrl);
+
+                outFormatStreams.put(cleanFormat);
+            }
+        }
+
+        // 3. Captions if available
+        JSONArray outCaptions = new JSONArray();
+        JSONObject captionsObj = successfulResponse.optJSONObject("captions");
+        if (captionsObj != null) {
+            JSONObject renderer = captionsObj.optJSONObject("playerCaptionsTracklistRenderer");
+            if (renderer != null) {
+                JSONArray tracks = renderer.optJSONArray("captionTracks");
+                if (tracks != null) {
+                    for (int i = 0; i < tracks.length(); i++) {
+                        JSONObject track = tracks.optJSONObject(i);
+                        if (track != null) {
+                            String baseUrl = track.optString("baseUrl", "");
+                            if (!baseUrl.isEmpty()) {
+                                JSONObject c = new JSONObject();
+                                String label = "";
+                                JSONObject nameObj = track.optJSONObject("name");
+                                if (nameObj != null) {
+                                    label = nameObj.optString("simpleText", "");
+                                }
+                                c.put("label", label);
+                                c.put("language_code", track.optString("languageCode", "en"));
+                                c.put("url", baseUrl);
+                                outCaptions.put(c);
+                            }
                         }
                     }
                 }
             }
         }
 
-        if (adaptiveFormats.length() == 0) {
-            throw new Exception("No playable audio stream could be extracted for video " + videoId);
-        }
-
+        // 4. Construct unified Invidious response for Ytify
         JSONObject result = new JSONObject();
         result.put("id", videoId);
         result.put("videoId", videoId);
-        result.put("title", title != null ? title : "Unknown Title");
-        result.put("author", author != null ? author : "Unknown Artist");
+        result.put("title", title);
+        result.put("author", author);
         result.put("authorId", "");
         result.put("lengthSeconds", lengthSeconds);
-        result.put("adaptiveFormats", adaptiveFormats);
-        result.put("formatStreams", new JSONArray());
+        result.put("adaptiveFormats", outAdaptiveFormats);
+        result.put("formatStreams", outFormatStreams);
         result.put("recommendedVideos", new JSONArray());
-        result.put("captions", new JSONArray());
+        result.put("captions", outCaptions);
         result.put("liveNow", false);
         result.put("proxy", "http://127.0.0.1:9999");
 
-        JSONObject streamingData = new JSONObject();
-        streamingData.put("adaptiveFormats", adaptiveFormats);
-        result.put("streamingData", streamingData);
+        JSONObject outStreamingData = new JSONObject();
+        outStreamingData.put("adaptiveFormats", outAdaptiveFormats);
+        outStreamingData.put("formats", outFormatStreams);
+        result.put("streamingData", outStreamingData);
 
         return result;
     }

@@ -128,10 +128,17 @@ public class HttpServer extends NanoHTTPD {
             conn.setConnectTimeout(10000);
             conn.setReadTimeout(15000);
             conn.setInstanceFollowRedirects(true);
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14)");
+            String userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
+            Map<String, String> reqHeaders = session.getHeaders();
+            for (Map.Entry<String, String> e : reqHeaders.entrySet()) {
+                if ("user-agent".equalsIgnoreCase(e.getKey()) && e.getValue() != null && !e.getValue().trim().isEmpty()) {
+                    userAgent = e.getValue();
+                    break;
+                }
+            }
+            conn.setRequestProperty("User-Agent", userAgent);
 
             String range = null;
-            Map<String, String> reqHeaders = session.getHeaders();
             for (Map.Entry<String, String> e : reqHeaders.entrySet()) {
                 if ("range".equalsIgnoreCase(e.getKey())) {
                     range = e.getValue();
@@ -157,7 +164,7 @@ public class HttpServer extends NanoHTTPD {
 
             String contentType = conn.getContentType();
             if (contentType == null || contentType.trim().isEmpty()) {
-                contentType = "audio/mp4";
+                contentType = targetUrl.contains("mime=video") ? "video/mp4" : "audio/mp4";
             }
             long contentLength = conn.getContentLengthLong();
             InputStream is = (code >= 200 && code < 400) ? conn.getInputStream() : conn.getErrorStream();

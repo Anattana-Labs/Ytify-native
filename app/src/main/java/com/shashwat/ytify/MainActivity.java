@@ -113,6 +113,7 @@ public class MainActivity extends Activity {
       "      var match = urlStr.match(/(?:\\/api\\/v1\\/videos\\/|\\/s\\/)([a-zA-Z0-9_-]{11})(?:[/?#]|$)/);\n" +
       "      if (match && match[1] && !urlStr.includes(':' + LOCAL_PORT)) {\n" +
       "        var videoId = match[1];\n" +
+      "        window.__currentVideoId = videoId;\n" +
       "        console.log('[YtifyNative] Intercepted stream request for videoId:', videoId);\n" +
       "        try {\n" +
       "          var localReqUrl = LOCAL_URL + '/api/v1/videos/' + videoId;\n" +
@@ -124,6 +125,31 @@ public class MainActivity extends Activity {
       "          if (localRes && localRes.ok) {\n" +
       "            console.log('[YtifyNative] Successfully resolved stream from localhost:9999 for:', videoId);\n" +
       "            showLocalServerNotification(videoId);\n" +
+      "            try {\n" +
+      "              var data = await localRes.clone().json();\n" +
+      "              if (data && data.adaptiveFormats && data.adaptiveFormats.length > 0) {\n" +
+      "                var has251 = data.adaptiveFormats.some(function(f) { return f.url && f.url.includes('itag=251'); });\n" +
+      "                var has140 = data.adaptiveFormats.some(function(f) { return f.url && f.url.includes('itag=140'); });\n" +
+      "                if (!has251 && data.adaptiveFormats[0]) {\n" +
+      "                  var c251 = Object.assign({}, data.adaptiveFormats[0]);\n" +
+      "                  c251.url = c251.url + (c251.url.includes('?') ? '&itag=251' : '?itag=251');\n" +
+      "                  c251.itag = 251;\n" +
+      "                  c251.type = 'audio/webm; codecs=\"opus\"';\n" +
+      "                  data.adaptiveFormats.push(c251);\n" +
+      "                }\n" +
+      "                if (!has140 && data.adaptiveFormats[0]) {\n" +
+      "                  var c140 = Object.assign({}, data.adaptiveFormats[0]);\n" +
+      "                  c140.url = c140.url + (c140.url.includes('?') ? '&itag=140' : '?itag=140');\n" +
+      "                  c140.itag = 140;\n" +
+      "                  c140.type = 'audio/mp4; codecs=\"mp4a.40.2\"';\n" +
+      "                  data.adaptiveFormats.push(c140);\n" +
+      "                }\n" +
+      "                return new Response(JSON.stringify(data), {\n" +
+      "                  status: 200,\n" +
+      "                  headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }\n" +
+      "                });\n" +
+      "              }\n" +
+      "            } catch(e) {}\n" +
       "            return localRes;\n" +
       "          }\n" +
       "          console.warn('[YtifyNative] Localhost:9999 returned status ' + (localRes ? localRes.status : 'null') + ', falling back to remote...');\n" +
@@ -156,6 +182,7 @@ public class MainActivity extends Activity {
       "  }\n" +
       "  function getVideoId() {\n" +
       "    try {\n" +
+      "      if (window.__currentVideoId) return window.__currentVideoId;\n" +
       "      var titleEl = document.querySelector('.mediaDetails #title, #title, a[href*=\"watch?v=\"]');\n" +
       "      if (titleEl && titleEl.href) {\n" +
       "        var match = titleEl.href.match(/[?&]v=([a-zA-Z0-9_-]{11})/);\n" +
@@ -267,12 +294,9 @@ public class MainActivity extends Activity {
       "      } catch (e) {}\n" +
       "    }\n" +
       "    window.__currentMediaData.title = title;\n" +
-      "    if (artist) {\n" +
-      "      window.__currentMediaData.artist = artist;\n" +
-      "    } else if (!window.__currentMediaData.artist) {\n" +
-      "      window.__currentMediaData.artist = getDomArtist();\n" +
-      "    }\n" +
+      "    window.__currentMediaData.artist = artist || getDomArtist();\n" +
       "    window.__currentMediaData.album = album;\n" +
+      "    window.__currentMediaData.artwork = '';\n" +
       "    if (window.__currentMediaData.state !== 'paused') {\n" +
       "      window.__currentMediaData.state = 'playing';\n" +
       "    }\n" +
@@ -439,8 +463,11 @@ public class MainActivity extends Activity {
       "    try {\n" +
       "      if (navigator.mediaSession && navigator.mediaSession.metadata) {\n" +
       "        var m = navigator.mediaSession.metadata;\n" +
-      "        if (m.title && m.title !== window.__lastSeenTitle) {\n" +
+      "        var art = (m.artwork && m.artwork.length > 0) ? m.artwork[m.artwork.length - 1].src : '';\n" +
+      "        if (m.title !== window.__lastSeenTitle || m.artist !== window.__lastSeenArtist || art !== window.__lastSeenArtwork) {\n" +
       "          window.__lastSeenTitle = m.title;\n" +
+      "          window.__lastSeenArtist = m.artist;\n" +
+      "          window.__lastSeenArtwork = art;\n" +
       "          handleMetadataUpdate(m);\n" +
       "        }\n" +
       "      } else {\n" +
@@ -465,7 +492,7 @@ public class MainActivity extends Activity {
       "        }\n" +
       "      }\n" +
       "    } catch (e) {}\n" +
-      "  }, 1000);\n" +
+      "  }, 500);\n" +
       "  window.__nativePlay = function() {\n" +
       "    if (window.__mediaSessionHandlers['play']) {\n" +
       "      try { window.__mediaSessionHandlers['play'](); return; } catch (e) {}\n" +

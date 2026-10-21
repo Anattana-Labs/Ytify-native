@@ -160,24 +160,23 @@ public class ForegroundService extends Service {
         long duration = intent.getLongExtra("duration", 0);
         long currentPosition = intent.getLongExtra("currentPosition", 0);
 
-        if (title != null) {
-            String clean = cleanText(title);
-            if (!clean.isEmpty()) {
-                currentTitle = clean;
-            }
+        String cleanTitle = title != null ? cleanText(title) : "";
+        String cleanSubtitle = subtitle != null ? cleanText(subtitle) : "";
+        String cleanAlbum = album != null ? cleanText(album) : "";
+
+        boolean isNewSong = !cleanTitle.isEmpty() && !cleanTitle.equalsIgnoreCase(currentTitle);
+        if (isNewSong) {
+            currentTitle = cleanTitle;
+            currentArtist = cleanSubtitle;
+            currentAlbum = cleanAlbum;
+            currentArtworkUrl = "";
+            cachedArtwork = null;
+        } else {
+            if (!cleanTitle.isEmpty()) currentTitle = cleanTitle;
+            if (!cleanSubtitle.isEmpty()) currentArtist = cleanSubtitle;
+            if (!cleanAlbum.isEmpty()) currentAlbum = cleanAlbum;
         }
-        if (subtitle != null) {
-            String clean = cleanText(subtitle);
-            if (!clean.isEmpty()) {
-                currentArtist = clean;
-            }
-        }
-        if (album != null) {
-            String clean = cleanText(album);
-            if (!clean.isEmpty()) {
-                currentAlbum = clean;
-            }
-        }
+
         if (duration > 0) {
             currentDuration = duration;
         }
@@ -218,13 +217,12 @@ public class ForegroundService extends Service {
         if (iconUrl != null && !iconUrl.isEmpty() && !iconUrl.startsWith("blob:") && !iconUrl.equals(currentArtworkUrl)) {
             currentArtworkUrl = iconUrl;
             renderNotificationAndSession();
+            final String targetUrl = iconUrl;
             executor.execute(() -> {
-                Bitmap loaded = loadBitmap(iconUrl);
-                if (loaded != null) {
+                Bitmap loaded = loadBitmap(targetUrl);
+                if (loaded != null && targetUrl.equals(currentArtworkUrl)) {
                     cachedArtwork = loaded;
                     mainHandler.post(this::renderNotificationAndSession);
-                } else {
-                    currentArtworkUrl = "";
                 }
             });
         } else {
@@ -374,6 +372,10 @@ public class ForegroundService extends Service {
             metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, albumArt);
             metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_ART, albumArt);
             metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, albumArt);
+        } else {
+            metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, null);
+            metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_ART, null);
+            metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, null);
         }
 
         mediaSession.setMetadata(metaBuilder.build());

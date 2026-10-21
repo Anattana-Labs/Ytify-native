@@ -61,6 +61,23 @@ public class MainActivity extends Activity {
       "    if (s.toLowerCase() === 'ytify' || s.toLowerCase() === 'free music streaming') return '';\n" +
       "    return s;\n" +
       "  }\n" +
+      "  function getVideoId() {\n" +
+      "    try {\n" +
+      "      var titleEl = document.querySelector('.mediaDetails #title, #title, a[href*=\"watch?v=\"]');\n" +
+      "      if (titleEl && titleEl.href) {\n" +
+      "        var match = titleEl.href.match(/[?&]v=([a-zA-Z0-9_-]{11})/);\n" +
+      "        if (match && match[1]) return match[1];\n" +
+      "      }\n" +
+      "      var m = window.location.href.match(/[?&]v=([a-zA-Z0-9_-]{11})/);\n" +
+      "      if (m && m[1]) return m[1];\n" +
+      "    } catch (e) {}\n" +
+      "    return '';\n" +
+      "  }\n" +
+      "  function getFallbackArtwork() {\n" +
+      "    var v = getVideoId();\n" +
+      "    if (v) return 'https://i.ytimg.com/vi/' + v + '/hqdefault.jpg';\n" +
+      "    return '';\n" +
+      "  }\n" +
       "  function sendToAndroid() {\n" +
       "    try {\n" +
       "      if (typeof Android === 'undefined' || !Android.updateMedia) return;\n" +
@@ -79,11 +96,15 @@ public class MainActivity extends Activity {
       "        }\n" +
       "      }\n" +
       "      var state = d.state === 'paused' ? 'paused' : 'playing';\n" +
+      "      var artwork = d.artwork || '';\n" +
+      "      if (!artwork || artwork.startsWith('blob:')) {\n" +
+      "        artwork = getFallbackArtwork();\n" +
+      "      }\n" +
       "      Android.updateMedia(\n" +
       "        titleClean,\n" +
       "        d.artist || '',\n" +
       "        d.album || '',\n" +
-      "        d.artwork || '',\n" +
+      "        artwork,\n" +
       "        Math.round(dur || 0),\n" +
       "        Math.round(pos || 0),\n" +
       "        state\n" +
@@ -100,6 +121,39 @@ public class MainActivity extends Activity {
       "    } catch (e) {}\n" +
       "    return '';\n" +
       "  }\n" +
+      "  function applyArtwork(src) {\n" +
+      "    if (!src) {\n" +
+      "      var fb = getFallbackArtwork();\n" +
+      "      if (fb) {\n" +
+      "        window.__currentMediaData.artwork = fb;\n" +
+      "        sendToAndroid();\n" +
+      "      }\n" +
+      "      return;\n" +
+      "    }\n" +
+      "    if (src.startsWith('blob:')) {\n" +
+      "      var fb = getFallbackArtwork();\n" +
+      "      if (fb) {\n" +
+      "        window.__currentMediaData.artwork = fb;\n" +
+      "        sendToAndroid();\n" +
+      "      }\n" +
+      "      fetch(src)\n" +
+      "        .then(function(res) { return res.blob(); })\n" +
+      "        .then(function(blob) {\n" +
+      "          var reader = new FileReader();\n" +
+      "          reader.onloadend = function() {\n" +
+      "            if (reader.result && typeof reader.result === 'string' && reader.result.startsWith('data:')) {\n" +
+      "              window.__currentMediaData.artwork = reader.result;\n" +
+      "              sendToAndroid();\n" +
+      "            }\n" +
+      "          };\n" +
+      "          reader.readAsDataURL(blob);\n" +
+      "        })\n" +
+      "        .catch(function(e) {});\n" +
+      "    } else {\n" +
+      "      window.__currentMediaData.artwork = src;\n" +
+      "      sendToAndroid();\n" +
+      "    }\n" +
+      "  }\n" +
       "  function handleMetadataUpdate(meta) {\n" +
       "    if (!meta) return;\n" +
       "    var title = cleanText(meta.title);\n" +
@@ -115,7 +169,7 @@ public class MainActivity extends Activity {
       "    }\n" +
       "    if (!artwork) {\n" +
       "      try {\n" +
-      "        var mini = document.querySelector('.miniplayer img') || document.querySelector('img[alt^=\"Media Artwork for\"]');\n" +
+      "        var mini = document.querySelector('.miniplayer img, img[alt^=\"Media Artwork for\"]');\n" +
       "        if (mini && mini.src) artwork = mini.src;\n" +
       "      } catch (e) {}\n" +
       "    }\n" +
@@ -129,29 +183,7 @@ public class MainActivity extends Activity {
       "    if (window.__currentMediaData.state !== 'paused') {\n" +
       "      window.__currentMediaData.state = 'playing';\n" +
       "    }\n" +
-      "    if (artwork && artwork.startsWith('blob:')) {\n" +
-      "      fetch(artwork)\n" +
-      "        .then(function(res) { return res.blob(); })\n" +
-      "        .then(function(blob) {\n" +
-      "          var reader = new FileReader();\n" +
-      "          reader.onloadend = function() {\n" +
-      "            window.__currentMediaData.artwork = reader.result || '';\n" +
-      "            sendToAndroid();\n" +
-      "          };\n" +
-      "          reader.onerror = function() {\n" +
-      "            window.__currentMediaData.artwork = '';\n" +
-      "            sendToAndroid();\n" +
-      "          };\n" +
-      "          reader.readAsDataURL(blob);\n" +
-      "        })\n" +
-      "        .catch(function(e) {\n" +
-      "          window.__currentMediaData.artwork = '';\n" +
-      "          sendToAndroid();\n" +
-      "        });\n" +
-      "    } else {\n" +
-      "      window.__currentMediaData.artwork = artwork || '';\n" +
-      "      sendToAndroid();\n" +
-      "    }\n" +
+      "    applyArtwork(artwork);\n" +
       "  }\n" +
       "  function checkFallbackMetadata() {\n" +
       "    var domArtist = getDomArtist();\n" +
@@ -163,8 +195,13 @@ public class MainActivity extends Activity {
       "      if (t && t.toLowerCase() !== 'ytify' && t.toLowerCase() !== 'free music streaming') {\n" +
       "        window.__currentMediaData.title = t;\n" +
       "        var mini = document.querySelector('.miniplayer img, img[alt^=\"Media Artwork for\"]');\n" +
-      "        if (mini && mini.src) window.__currentMediaData.artwork = mini.src;\n" +
-      "        sendToAndroid();\n" +
+      "        if (mini && mini.src) {\n" +
+      "          applyArtwork(mini.src);\n" +
+      "        } else {\n" +
+      "          var fb = getFallbackArtwork();\n" +
+      "          if (fb) window.__currentMediaData.artwork = fb;\n" +
+      "          sendToAndroid();\n" +
+      "        }\n" +
       "      }\n" +
       "    } else if (domArtist && window.__currentMediaData.title) {\n" +
       "      sendToAndroid();\n" +
@@ -320,6 +357,13 @@ public class MainActivity extends Activity {
       "      if (da && !window.__currentMediaData.artist) {\n" +
       "        window.__currentMediaData.artist = da;\n" +
       "        sendToAndroid();\n" +
+      "      }\n" +
+      "      if (!window.__currentMediaData.artwork || window.__currentMediaData.artwork.startsWith('blob:')) {\n" +
+      "        var fb = getFallbackArtwork();\n" +
+      "        if (fb && window.__currentMediaData.artwork !== fb) {\n" +
+      "          window.__currentMediaData.artwork = fb;\n" +
+      "          sendToAndroid();\n" +
+      "        }\n" +
       "      }\n" +
       "      if (window.__currentAudio) {\n" +
       "        if (!window.__currentAudio.paused && window.__currentMediaData.state !== 'playing') {\n" +

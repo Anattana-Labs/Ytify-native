@@ -20,7 +20,7 @@ import java.util.List;
 /**
  * Turns a video id into playable audio streams by asking the Worker API,
  * Casquad fallback API, and unciphered YouTube InnerTube clients (VisionOS, Android VR, TV HTML5) in sequence.
- * Replaces NewPipeExtractor with direct, lightweight, zero-bloat stream extraction using pure Android networking.
+ * Direct, lightweight, zero-bloat stream extraction using pure Android networking.
  */
 public class PlaybackResolver {
 

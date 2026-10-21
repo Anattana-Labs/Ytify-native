@@ -215,7 +215,7 @@ public class ForegroundService extends Service {
     }
 
     private void processNotification(String iconUrl) {
-        if (iconUrl != null && !iconUrl.isEmpty() && !iconUrl.equals(currentArtworkUrl)) {
+        if (iconUrl != null && !iconUrl.isEmpty() && !iconUrl.startsWith("blob:") && !iconUrl.equals(currentArtworkUrl)) {
             currentArtworkUrl = iconUrl;
             renderNotificationAndSession();
             executor.execute(() -> {
@@ -223,6 +223,8 @@ public class ForegroundService extends Service {
                 if (loaded != null) {
                     cachedArtwork = loaded;
                     mainHandler.post(this::renderNotificationAndSession);
+                } else {
+                    currentArtworkUrl = "";
                 }
             });
         } else {
@@ -231,7 +233,7 @@ public class ForegroundService extends Service {
     }
 
     private Bitmap loadBitmap(String source) {
-        if (source == null || source.trim().isEmpty()) return null;
+        if (source == null || source.trim().isEmpty() || source.startsWith("blob:")) return null;
         source = source.trim();
         try {
             if (source.startsWith("data:image") || source.startsWith("data:")) {

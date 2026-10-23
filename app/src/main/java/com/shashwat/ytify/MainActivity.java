@@ -225,22 +225,13 @@ public class MainActivity extends Activity {
       "  var LOCAL_URL = 'http://127.0.0.1:' + LOCAL_PORT;\n" +
       "  window.__ytify_video_formats = [];\n" +
       "  function sanitizeStreamUrl(val) {\n" +
-      "    if (typeof val !== 'string' || !val) return val;\n" +
-      "    if (val.includes('/proxy?')) {\n" +
-      "      var pIdx = val.indexOf('/proxy?');\n" +
-      "      return LOCAL_URL + val.substring(pIdx);\n" +
-      "    }\n" +
-      "    if (val.includes('googlevideo.com') && !val.includes(':' + LOCAL_PORT)) {\n" +
-      "      return LOCAL_URL + '/proxy?url=' + encodeURIComponent(val);\n" +
-      "    }\n" +
-      "    return val;\n" +
+      "    return val || '';\n" +
       "  }\n" +
       "  try {\n" +
       "    var origSetAttribute = Element.prototype.setAttribute;\n" +
       "    Element.prototype.setAttribute = function(name, val) {\n" +
       "      if ((this instanceof HTMLVideoElement || this instanceof HTMLAudioElement) && typeof name === 'string') {\n" +
       "        if (name.toLowerCase() === 'crossorigin') return;\n" +
-      "        if (name.toLowerCase() === 'src') val = sanitizeStreamUrl(val);\n" +
       "      }\n" +
       "      return origSetAttribute.call(this, name, val);\n" +
       "    };\n" +
@@ -278,7 +269,7 @@ public class MainActivity extends Activity {
       "      var OrigAudio = window.Audio;\n" +
       "      window.Audio = function(src) {\n" +
       "        var a = new OrigAudio();\n" +
-      "        if (src) a.src = sanitizeStreamUrl(src);\n" +
+      "        if (src) a.src = src;\n" +
       "        return a;\n" +
       "      };\n" +
       "      window.Audio.prototype = OrigAudio.prototype;\n" +
@@ -369,9 +360,7 @@ public class MainActivity extends Activity {
       "        get: function() { return origGetMediaSrc ? origGetMediaSrc.call(this) : (this.getAttribute('src') || ''); },\n" +
       "        set: function(val) {\n" +
       "          this.removeAttribute('crossorigin');\n" +
-      "          var clean = sanitizeStreamUrl(val);\n" +
-      "          console.log('[ytifyNative] Audio src set -> sanitized:', clean);\n" +
-      "          return origSetMediaSrc.call(this, clean);\n" +
+      "          return origSetMediaSrc.call(this, val);\n" +
       "        },\n" +
       "        configurable: true\n" +
       "      });\n" +
@@ -379,18 +368,17 @@ public class MainActivity extends Activity {
       "        get: function() { return origGetMediaSrc ? origGetMediaSrc.call(this) : (this.getAttribute('src') || ''); },\n" +
       "        set: function(val) {\n" +
       "          this.removeAttribute('crossorigin');\n" +
-      "          val = sanitizeStreamUrl(val);\n" +
       "          if (typeof val === 'string' && (!val.startsWith('http') || val.includes('dummy') || val.endsWith('Resolution'))) {\n" +
       "            var best = pickBestVideoUrl();\n" +
       "            if (best) {\n" +
-      "              val = sanitizeStreamUrl(best);\n" +
+      "              val = best;\n" +
       "            } else {\n" +
       "              var self = this;\n" +
       "              setTimeout(function() {\n" +
       "                var b = pickBestVideoUrl();\n" +
       "                if (b && (!self.src || !self.src.startsWith('http'))) {\n" +
       "                  self.removeAttribute('crossorigin');\n" +
-      "                  origSetMediaSrc.call(self, sanitizeStreamUrl(b));\n" +
+      "                  origSetMediaSrc.call(self, b);\n" +
       "                  if (window.__currentAudio) self.currentTime = window.__currentAudio.currentTime || 0;\n" +
       "                  self.play().catch(function() {});\n" +
       "                }\n" +

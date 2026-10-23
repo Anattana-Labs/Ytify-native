@@ -7,8 +7,8 @@ android {
 		applicationId "com.shashwat.ytifynative"
 		minSdkVersion 21
 		targetSdkVersion 33
-		versionCode 1
-		versionName "3.87"
+		versionCode 2
+		versionName "1.1"
 	}
 	buildTypes {
 		release {

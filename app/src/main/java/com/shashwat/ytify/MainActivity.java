@@ -224,14 +224,35 @@ public class MainActivity extends Activity {
       "  var LOCAL_PORT = 9999;\n" +
       "  var LOCAL_URL = 'http://127.0.0.1:' + LOCAL_PORT;\n" +
       "  window.__ytify_video_formats = [];\n" +
+      "  function sanitizeStreamUrl(val) {\n" +
+      "    if (typeof val !== 'string' || !val) return val;\n" +
+      "    if (val.includes('/proxy?')) {\n" +
+      "      var pIdx = val.indexOf('/proxy?');\n" +
+      "      return LOCAL_URL + val.substring(pIdx);\n" +
+      "    }\n" +
+      "    if (val.includes('googlevideo.com') && !val.includes(':' + LOCAL_PORT)) {\n" +
+      "      return LOCAL_URL + '/proxy?url=' + encodeURIComponent(val);\n" +
+      "    }\n" +
+      "    return val;\n" +
+      "  }\n" +
       "  try {\n" +
       "    var origSetAttribute = Element.prototype.setAttribute;\n" +
       "    Element.prototype.setAttribute = function(name, val) {\n" +
-      "      if (this instanceof HTMLVideoElement && typeof name === 'string' && name.toLowerCase() === 'crossorigin') {\n" +
-      "        return;\n" +
+      "      if ((this instanceof HTMLVideoElement || this instanceof HTMLAudioElement) && typeof name === 'string') {\n" +
+      "        if (name.toLowerCase() === 'crossorigin') return;\n" +
+      "        if (name.toLowerCase() === 'src') val = sanitizeStreamUrl(val);\n" +
       "      }\n" +
-      "      return origSetAttribute.apply(this, arguments);\n" +
+      "      return origSetAttribute.call(this, name, val);\n" +
       "    };\n" +
+      "    Object.defineProperty(HTMLAudioElement.prototype, 'onerror', {\n" +
+      "      get: function() { return this._custom_onerror || null; },\n" +
+      "      set: function(fn) {\n" +
+      "        this._custom_onerror = function(e) {\n" +
+      "          console.warn('[ytifyNative] Trapped audio error handler (preventing EA playback abort)');\n" +
+      "        };\n" +
+      "      },\n" +
+      "      configurable: true\n" +
+      "    });\n" +
       "    Object.defineProperty(HTMLVideoElement.prototype, 'onerror', {\n" +
       "      get: function() { return this._custom_onerror || null; },\n" +
       "      set: function(fn) {\n" +
@@ -241,6 +262,27 @@ public class MainActivity extends Activity {
       "      },\n" +
       "      configurable: true\n" +
       "    });\n" +
+      "    var origAddEventListener = EventTarget.prototype.addEventListener;\n" +
+      "    EventTarget.prototype.addEventListener = function(type, listener, options) {\n" +
+      "      if (type === 'error' && (this instanceof HTMLAudioElement || this instanceof HTMLVideoElement)) {\n" +
+      "        var wrapped = function(e) {\n" +
+      "          console.warn('[ytifyNative] Intercepted media error event, suppressing EA snackbar');\n" +
+      "          if (e && e.stopImmediatePropagation) e.stopImmediatePropagation();\n" +
+      "          if (e && e.stopPropagation) e.stopPropagation();\n" +
+      "        };\n" +
+      "        return origAddEventListener.call(this, type, wrapped, options);\n" +
+      "      }\n" +
+      "      return origAddEventListener.apply(this, arguments);\n" +
+      "    };\n" +
+      "    if (window.Audio) {\n" +
+      "      var OrigAudio = window.Audio;\n" +
+      "      window.Audio = function(src) {\n" +
+      "        var a = new OrigAudio();\n" +
+      "        if (src) a.src = sanitizeStreamUrl(src);\n" +
+      "        return a;\n" +
+      "      };\n" +
+      "      window.Audio.prototype = OrigAudio.prototype;\n" +
+      "    }\n" +
       "  } catch(e) {}\n" +
       "  function pickBestVideoUrl() {\n" +
       "    var sel = document.querySelector('.watcher select');\n" +
@@ -319,24 +361,36 @@ public class MainActivity extends Activity {
       "    return origFetch.apply(this, arguments);\n" +
       "  };\n" +
       "  try {\n" +
-      "    var origVideoSrcDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');\n" +
-      "    if (origVideoSrcDesc && origVideoSrcDesc.set) {\n" +
-      "      var origSetMediaSrc = origVideoSrcDesc.set;\n" +
-      "      Object.defineProperty(HTMLVideoElement.prototype, 'src', {\n" +
-      "        get: function() { return origVideoSrcDesc.get ? origVideoSrcDesc.get.call(this) : (this.getAttribute('src') || ''); },\n" +
+      "    var origMediaSrcDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');\n" +
+      "    if (origMediaSrcDesc && origMediaSrcDesc.set) {\n" +
+      "      var origSetMediaSrc = origMediaSrcDesc.set;\n" +
+      "      var origGetMediaSrc = origMediaSrcDesc.get;\n" +
+      "      Object.defineProperty(HTMLAudioElement.prototype, 'src', {\n" +
+      "        get: function() { return origGetMediaSrc ? origGetMediaSrc.call(this) : (this.getAttribute('src') || ''); },\n" +
       "        set: function(val) {\n" +
       "          this.removeAttribute('crossorigin');\n" +
+      "          var clean = sanitizeStreamUrl(val);\n" +
+      "          console.log('[ytifyNative] Audio src set -> sanitized:', clean);\n" +
+      "          return origSetMediaSrc.call(this, clean);\n" +
+      "        },\n" +
+      "        configurable: true\n" +
+      "      });\n" +
+      "      Object.defineProperty(HTMLVideoElement.prototype, 'src', {\n" +
+      "        get: function() { return origGetMediaSrc ? origGetMediaSrc.call(this) : (this.getAttribute('src') || ''); },\n" +
+      "        set: function(val) {\n" +
+      "          this.removeAttribute('crossorigin');\n" +
+      "          val = sanitizeStreamUrl(val);\n" +
       "          if (typeof val === 'string' && (!val.startsWith('http') || val.includes('dummy') || val.endsWith('Resolution'))) {\n" +
       "            var best = pickBestVideoUrl();\n" +
       "            if (best) {\n" +
-      "              val = best;\n" +
+      "              val = sanitizeStreamUrl(best);\n" +
       "            } else {\n" +
       "              var self = this;\n" +
       "              setTimeout(function() {\n" +
       "                var b = pickBestVideoUrl();\n" +
       "                if (b && (!self.src || !self.src.startsWith('http'))) {\n" +
       "                  self.removeAttribute('crossorigin');\n" +
-      "                  origSetMediaSrc.call(self, b);\n" +
+      "                  origSetMediaSrc.call(self, sanitizeStreamUrl(b));\n" +
       "                  if (window.__currentAudio) self.currentTime = window.__currentAudio.currentTime || 0;\n" +
       "                  self.play().catch(function() {});\n" +
       "                }\n" +

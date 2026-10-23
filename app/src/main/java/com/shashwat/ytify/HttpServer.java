@@ -84,7 +84,7 @@ public class HttpServer extends NanoHTTPD {
             try {
                 statusJson.put("status", "ok");
                 statusJson.put("extractor", "PlaybackResolver");
-                statusJson.put("version", "v1.0");
+                statusJson.put("version", "v1.1");
             } catch (JSONException ignored) {}
 
             Response response = newFixedLengthResponse(Response.Status.OK, "application/json", statusJson.toString());
